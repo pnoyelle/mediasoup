@@ -2,6 +2,7 @@
 #define MS_RTC_SRTP_SESSION_HPP
 
 #include "common.hpp"
+#include "DepLibUV.hpp"
 #include <srtp.h>
 
 namespace RTC
@@ -27,9 +28,20 @@ namespace RTC
 
 	public:
 		static void ClassInit();
+		using onEncryptCallback = const std::function<void(uint8_t* data, size_t len)>;
 
 	private:
 		static void OnSrtpEvent(srtp_event_data_t* data);
+
+		uv_mutex_t encryptBuffer_mutex;
+		struct EncryptRtpAsync_baton {
+			uv_work_t req;
+			SrtpSession* session;
+			uint8_t* data;
+			size_t len;
+			bool ret;
+			onEncryptCallback* cb;
+		};
 
 	public:
 		SrtpSession(Type type, CryptoSuite cryptoSuite, uint8_t* key, size_t keyLen);
@@ -44,6 +56,10 @@ namespace RTC
 		{
 			srtp_remove_stream(this->session, uint32_t{ htonl(ssrc) });
 		}
+
+		void EncryptRtpAsync(const uint8_t* data, size_t len, onEncryptCallback* cb = nullptr);
+		static void EncryptRtpAsync_work(uv_work_t* req);
+		static void EncryptRtpAsync_cleanup(uv_work_t* req, int status);
 
 	private:
 		// Allocated by this.

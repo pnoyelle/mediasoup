@@ -6,6 +6,7 @@
 #include "Logger.hpp"
 #include "MediaSoupErrors.hpp"
 #include <cstring> // std::memset(), std::memcpy()
+#include <cstdlib> // std::malloc(), std::free()
 
 namespace RTC
 {
@@ -149,7 +150,7 @@ namespace RTC
 	bool SrtpSession::EncryptRtp(const uint8_t** data, size_t* len)
 	{
 		MS_TRACE();
-
+		
 		// Ensure that the resulting SRTP packet fits into the encrypt buffer.
 		if (*len + SRTP_MAX_TRAILER_LEN > EncryptBufferSize)
 		{
@@ -166,7 +167,7 @@ namespace RTC
 		if (DepLibSRTP::IsError(err))
 		{
 			MS_WARN_TAG(srtp, "srtp_protect() failed: %s", DepLibSRTP::GetErrorString(err));
-
+			
 			return false;
 		}
 
@@ -174,6 +175,68 @@ namespace RTC
 		*data = (const uint8_t*)EncryptBuffer;
 
 		return true;
+	}
+
+	void SrtpSession::EncryptRtpAsync(const uint8_t* data, size_t len, onEncryptCallback* cb)
+	{
+		EncryptRtpAsync_baton* baton = new EncryptRtpAsync_baton();
+		baton->req.data = (void*) baton;
+		baton->session = this;
+		baton->data = (uint8_t*) std::malloc(len + SRTP_MAX_TRAILER_LEN);
+		std::memcpy(baton->data, data, len);
+		baton->len = len;
+		baton->cb = cb;
+		baton->ret = false;
+
+		//MS_WARN_TAG(rtp, "EncryptRtpAsync %p len=%lu", this, len);
+		uv_queue_work(DepLibUV::GetLoop(), &baton->req, SrtpSession::EncryptRtpAsync_work, (uv_after_work_cb)SrtpSession::EncryptRtpAsync_cleanup);	
+	}
+
+	void SrtpSession::EncryptRtpAsync_work(uv_work_t* req)
+	{
+		EncryptRtpAsync_baton* baton = static_cast<EncryptRtpAsync_baton*>(req->data);
+
+		if (!baton->session->session)
+		{
+			baton->ret = false;
+			std::free(baton->data);
+			baton->data = nullptr;
+			return;
+		}
+
+		srtp_err_status_t err =
+		  srtp_protect(baton->session->session, static_cast<void*>(baton->data), reinterpret_cast<int*>(&baton->len));
+
+		if (DepLibSRTP::IsError(err))
+		{
+			MS_WARN_TAG(srtp, "srtp_protect() failed: %s", DepLibSRTP::GetErrorString(err));
+			baton->ret = false;
+			std::free(baton->data);
+			baton->data = nullptr;
+		}
+		else
+		{
+			baton->ret = true;
+		}
+	}
+
+	void SrtpSession::EncryptRtpAsync_cleanup(uv_work_t* req, int status)
+	{
+		EncryptRtpAsync_baton* baton = static_cast<EncryptRtpAsync_baton*>(req->data);
+
+		//MS_WARN_TAG(rtp, "EncryptRtpAsync_cleanup %p len=%lu", baton->session, baton->len);
+
+		if (baton->cb)
+		{
+			if (baton->ret)
+				(*baton->cb)(baton->data, baton->len);
+			else
+				(*baton->cb)(nullptr, 0);
+
+			delete baton->cb;
+		}
+
+		delete baton;
 	}
 
 	bool SrtpSession::DecryptSrtp(uint8_t* data, size_t* len)
