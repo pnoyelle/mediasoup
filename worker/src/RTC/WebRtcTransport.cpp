@@ -723,7 +723,7 @@ namespace RTC
 			return;
 		}
 
-		/* 
+		
 		const uint8_t* data = packet->GetData();
 		size_t len          = packet->GetSize();
 		
@@ -741,9 +741,9 @@ namespace RTC
 		this->iceServer->GetSelectedTuple()->Send(data, len, cb);
 
 		// Increase send transmission.
-		RTC::Transport::DataSent(len); */
+		RTC::Transport::DataSent(len);
 
-		auto* ecb = new SrtpSession::onEncryptCallback([this, cb](uint8_t* data, size_t len) {
+		/* auto* ecb = new SrtpSession::onEncryptCallback([this, cb](uint8_t* data, size_t len) {
 			if (!data || !this->iceServer || !this->iceServer->GetSelectedTuple())
 			{
 				if (cb)
@@ -765,7 +765,7 @@ namespace RTC
 			RTC::Transport::DataSent(len);
 		});
 
-		this->srtpSendSession->EncryptRtpAsync(packet->GetData(), packet->GetSize(), ecb);
+		this->srtpSendSession->EncryptRtpAsync(packet->GetData(), packet->GetSize(), ecb); */
 	}
 
 	void WebRtcTransport::SendRtcpPacket(RTC::RTCP::Packet* packet)

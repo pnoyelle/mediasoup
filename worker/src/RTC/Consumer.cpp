@@ -536,4 +536,40 @@ namespace RTC
 
 		Channel::Notifier::Emit(this->id, "trace", data);
 	}
+
+
+	void Consumer::SendRtpPacket_async(RTC::RtpPacket* packet)
+	{
+		SendRtpPacket_baton* baton = new SendRtpPacket_baton();
+		baton->req.data = (void*) baton;
+		baton->consumer = this;
+		baton->buffer = (uint8_t*) std::malloc(packet->GetSize());
+		baton->packet = packet->Clone(baton->buffer);
+
+		uv_queue_work(DepLibUV::GetLoop(), &baton->req, Consumer::SendRtpPacket_work, (uv_after_work_cb)Consumer::SendRtpPacket_cleanup);
+	}
+
+	void Consumer::SendRtpPacket_work(uv_work_t* req)
+	{
+		SendRtpPacket_baton* baton = static_cast<SendRtpPacket_baton*>(req->data);
+
+		if (!baton->consumer)
+		{
+			return;
+		}
+
+		baton->consumer->SendRtpPacket(baton->packet);
+	}
+
+	void Consumer::SendRtpPacket_cleanup(uv_work_t* req, int status)
+	{
+		SendRtpPacket_baton* baton = static_cast<SendRtpPacket_baton*>(req->data);
+
+		delete baton->packet;
+		std::free(baton->buffer);
+		
+		delete baton;
+	}
+
+
 } // namespace RTC

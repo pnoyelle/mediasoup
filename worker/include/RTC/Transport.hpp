@@ -138,6 +138,7 @@ namespace RTC
 			this->sendTransmission.Update(len, DepLibUV::GetTimeMs());
 		}
 		void ReceiveRtpPacket(RTC::RtpPacket* packet);
+		void ReceiveRtpPacket_async(RTC::RtpPacket* packet);
 		void ReceiveRtcpPacket(RTC::RTCP::Packet* packet);
 		void ReceiveSctpData(const uint8_t* data, size_t len);
 		void SetNewProducerIdFromInternal(json& internal, std::string& producerId) const;
@@ -184,6 +185,7 @@ namespace RTC
 		void OnProducerRtcpSenderReport(
 		  RTC::Producer* producer, RTC::RtpStream* rtpStream, bool first) override;
 		void OnProducerRtpPacketReceived(RTC::Producer* producer, RTC::RtpPacket* packet) override;
+		void OnProducerRtpPacketReceived_async(RTC::Producer* producer, RTC::RtpPacket* packet) override;
 		void OnProducerSendRtcpPacket(RTC::Producer* producer, RTC::RTCP::Packet* packet) override;
 		void OnProducerNeedWorstRemoteFractionLost(
 		  RTC::Producer* producer, uint32_t mappedSsrc, uint8_t& worstRemoteFractionLost) override;
@@ -299,6 +301,25 @@ namespace RTC
 		uint32_t initialAvailableOutgoingBitrate{ 600000u };
 		uint32_t maxIncomingBitrate{ 0u };
 		struct TraceEventTypes traceEventTypes;
+
+	private:
+		struct ReceiveRtpPacket_baton {
+			uv_work_t req;
+			Transport* transport;
+			RTC::RtpPacket* packet;
+		};
+		static void ReceiveRtpPacket_work(uv_work_t* req);
+		static void ReceiveRtpPacket_cleanup(uv_work_t* req, int status);
+
+		struct OnProducerRtpPacketReceived_baton {
+			uv_work_t req;
+			Transport* transport;
+			RTC::Producer* producer;
+			RTC::RtpPacket* packet;
+		};
+		static void OnProducerRtpPacketReceived_work(uv_work_t* req);
+		static void OnProducerRtpPacketReceived_cleanup(uv_work_t* req, int status);
+
 	};
 } // namespace RTC
 

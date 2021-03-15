@@ -36,6 +36,7 @@ namespace RTC
 			virtual void OnProducerRtcpSenderReport(
 			  RTC::Producer* producer, RTC::RtpStream* rtpStream, bool first)                         = 0;
 			virtual void OnProducerRtpPacketReceived(RTC::Producer* producer, RTC::RtpPacket* packet) = 0;
+			virtual void OnProducerRtpPacketReceived_async(RTC::Producer* producer, RTC::RtpPacket* packet) = 0;
 			virtual void OnProducerSendRtcpPacket(RTC::Producer* producer, RTC::RTCP::Packet* packet) = 0;
 			virtual void OnProducerNeedWorstRemoteFractionLost(
 			  RTC::Producer* producer, uint32_t mappedSsrc, uint8_t& worstRemoteFractionLost) = 0;

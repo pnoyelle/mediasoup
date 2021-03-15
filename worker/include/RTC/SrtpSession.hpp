@@ -33,7 +33,6 @@ namespace RTC
 	private:
 		static void OnSrtpEvent(srtp_event_data_t* data);
 
-		uv_mutex_t encryptBuffer_mutex;
 		struct EncryptRtpAsync_baton {
 			uv_work_t req;
 			SrtpSession* session;

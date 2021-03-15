@@ -151,6 +151,16 @@ namespace RTC
 		virtual uint32_t GetTransmissionRate(uint64_t nowMs)                      = 0;
 		virtual float GetRtt() const                                              = 0;
 
+		struct SendRtpPacket_baton {
+			uv_work_t req;
+			Consumer* consumer;
+			uint8_t* buffer;
+			RTC::RtpPacket* packet;
+		};
+		void SendRtpPacket_async(RTC::RtpPacket* packet);
+		static void SendRtpPacket_work(uv_work_t* req);
+		static void SendRtpPacket_cleanup(uv_work_t* req, int status);
+
 	protected:
 		void EmitTraceEventRtpAndKeyFrameTypes(RTC::RtpPacket* packet, bool isRtx = false) const;
 		void EmitTraceEventKeyFrameType(RTC::RtpPacket* packet, bool isRtx = false) const;

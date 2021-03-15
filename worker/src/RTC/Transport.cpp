@@ -1670,6 +1670,38 @@ namespace RTC
 		delete packet;
 	}
 
+	void Transport::ReceiveRtpPacket_async(RTC::RtpPacket* packet)
+	{
+		MS_TRACE();
+
+		ReceiveRtpPacket_baton* baton = new ReceiveRtpPacket_baton();
+		baton->req.data = (void*) baton;
+		baton->transport = this;
+		baton->packet = packet;
+
+		uv_queue_work(DepLibUV::GetLoop(), &baton->req, Transport::ReceiveRtpPacket_work, (uv_after_work_cb)Transport::ReceiveRtpPacket_cleanup);
+	}
+
+	void Transport::ReceiveRtpPacket_work(uv_work_t* req)
+	{
+		ReceiveRtpPacket_baton* baton = static_cast<ReceiveRtpPacket_baton*>(req->data);
+
+		if (!baton->transport || !baton->packet)
+		{
+			return;
+		}
+
+		baton->transport->ReceiveRtpPacket(baton->packet);
+	}
+
+	void Transport::ReceiveRtpPacket_cleanup(uv_work_t* req, int status)
+	{
+		ReceiveRtpPacket_baton* baton = static_cast<ReceiveRtpPacket_baton*>(req->data);
+		
+		delete baton;
+	}
+
+
 	void Transport::ReceiveRtcpPacket(RTC::RTCP::Packet* packet)
 	{
 		MS_TRACE();
@@ -2492,6 +2524,39 @@ namespace RTC
 
 		this->listener->OnTransportProducerRtpPacketReceived(this, producer, packet);
 	}
+
+	inline void Transport::OnProducerRtpPacketReceived_async(RTC::Producer* producer, RTC::RtpPacket* packet)
+	{
+		MS_TRACE();
+
+		OnProducerRtpPacketReceived_baton* baton = new OnProducerRtpPacketReceived_baton();
+		baton->req.data = (void*) baton;
+		baton->transport = this;
+		baton->producer = producer;
+		baton->packet = packet;
+
+		uv_queue_work(DepLibUV::GetLoop(), &baton->req, Transport::OnProducerRtpPacketReceived_work, (uv_after_work_cb)Transport::OnProducerRtpPacketReceived_cleanup);
+	}
+
+	void Transport::OnProducerRtpPacketReceived_work(uv_work_t* req)
+	{
+		OnProducerRtpPacketReceived_baton* baton = static_cast<OnProducerRtpPacketReceived_baton*>(req->data);
+
+		if (!baton->transport->listener || !baton->producer || !baton->packet)
+		{
+			return;
+		}
+
+		baton->transport->listener->OnTransportProducerRtpPacketReceived(baton->transport, baton->producer, baton->packet);
+	}
+
+	void Transport::OnProducerRtpPacketReceived_cleanup(uv_work_t* req, int status)
+	{
+		OnProducerRtpPacketReceived_baton* baton = static_cast<OnProducerRtpPacketReceived_baton*>(req->data);
+		
+		delete baton;
+	}
+
 
 	inline void Transport::OnProducerSendRtcpPacket(RTC::Producer* /*producer*/, RTC::RTCP::Packet* packet)
 	{
