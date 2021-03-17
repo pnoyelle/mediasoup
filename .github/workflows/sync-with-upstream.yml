@@ -24,11 +24,9 @@ jobs:
         git merge upstream/v3 --no-edit
         git push
         upstream_tag=$(git ls-remote --tags --sort=-version:refname --refs upstream | head -1 | awk '{gsub("refs\/tags\/", "", $2); print $2}')
-        if git rev-list ${upstream_tag}-build-with-system-openssl > /dev/null
-        then
-          echo "no changes"
-        else
-          git tag -a ${upstream_tag}-build-with-system-openssl -m "${upstream_tag}-build-with-system-openssl auto release"
-          git status
-          git push origin --tags
-        fi
+        echo "Checking tag: ${upstream_tag}"
+        (git rev-list ${upstream_tag}-build-with-system-openssl > /dev/null) || (
+          git tag -a ${upstream_tag}-build-with-system-openssl -m "${upstream_tag}-build-with-system-openssl auto release";
+          git status;
+          git push origin --tags;
+        )
