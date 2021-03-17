@@ -1,0 +1,17 @@
+name: Sync with upstream releases
+
+on:
+  workflow_dispatch:
+    inputs:
+  #schedule:
+  #  - cron:  '0 2 * * *'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+    - name: git-bash
+      uses: pkg-src/github-action-git-bash@v1.1
+      with:
+        script: |
+          git log
