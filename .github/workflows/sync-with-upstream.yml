@@ -10,8 +10,17 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-    - name: git-bash
-      uses: pkg-src/github-action-git-bash@v1.1
-      with:
-        script: |
-          git log
+    - uses: actions/checkout@v2
+    - run: |
+        git log
+        git remote add upstream https://github.com/versatica/mediasoup.git
+        git fetch upstream
+        git merge upstream/v3 --no-edit
+        git checkout build-with-system-openssl
+        upstream_tag=$(git ls-remote --tags --sort=-version:refname --refs upstream | head -1 | awk '{print $2}')
+        if git rev-list ${upstream_tag}-build-with-system-openssl > /dev/null
+        then
+        else
+          #git tag -a ${upstream_tag}-build-with-system-openssl -m "${upstream_tag}-build-with-system-openssl auto release"
+          #git push origin --tags
+        fi
