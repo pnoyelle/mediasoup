@@ -11,14 +11,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+      with:
+        ref: build-with-system-openssl
     - run: |
-        git checkout build-with-system-openssl
+        git config --global user.name "vpalmisano"
+        git config --global user.email "vpalmisano@gmail.com"
         git remote add upstream https://github.com/versatica/mediasoup.git
         git fetch upstream
         git merge upstream/v3 --no-edit
         upstream_tag=$(git ls-remote --tags --sort=-version:refname --refs upstream | head -1 | awk '{gsub("refs\/tags\/", "", $2); print $2}')
-        if git rev-list ${upstream_tag}-build-with-system-openssl > /dev/null
+        if (git rev-list ${upstream_tag}-build-with-system-openssl > /dev/null)
         then
+          echo "no changes"
         else
           git tag -a ${upstream_tag}-build-with-system-openssl -m "${upstream_tag}-build-with-system-openssl auto release"
           git push
