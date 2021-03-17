@@ -10,8 +10,6 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-    - name: git-bash
-      uses: pkg-src/github-action-git-bash@v1.1
-      with:
-        script: |
-          git log
+    - uses: actions/checkout@v2
+    - run: |
+      git log
