@@ -12,9 +12,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - run: |
-        git checkout build-with-system-openssl
         git config --global user.name "vpalmisano"
         git config --global user.email "vpalmisano@gmail.com"
+        git checkout build-with-system-openssl
+        git merge v3 --no-edit
         git remote add upstream https://github.com/versatica/mediasoup.git
         git fetch upstream
         git merge upstream/v3 --no-edit
