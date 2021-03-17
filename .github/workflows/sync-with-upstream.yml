@@ -14,6 +14,8 @@ jobs:
       with:
         token: ${{ github.token }}
     - run: |
+        git fetch build-with-system-openssl
+        git checkout build-with-system-openssl
         git config --global user.name "vpalmisano"
         git config --global user.email "vpalmisano@gmail.com"
         git fetch build-with-system-openssl
