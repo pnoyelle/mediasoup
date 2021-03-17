@@ -12,7 +12,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - run: |
-        git fetch build-with-system-openssl
         git checkout build-with-system-openssl
         git config --global user.name "vpalmisano"
         git config --global user.email "vpalmisano@gmail.com"
