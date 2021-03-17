@@ -11,8 +11,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
-      with:
-        ref: build-with-system-openssl
     - run: |
         git fetch build-with-system-openssl
         git checkout build-with-system-openssl
