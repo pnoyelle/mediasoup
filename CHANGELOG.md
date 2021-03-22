@@ -1,11 +1,37 @@
 # Changelog
 
 
-### 3.6.33 (WIP)
+### 3.6.38 (WIP)
 
+
+### 3.6.37
+
+* Fix crash if empty `fingerprints` array is given in `webrtcTransport.connect()` (issue #537).
+
+### 3.6.36
+
+* `Producer`: Add new stats field 'rtxPacketsDiscarded' (PR #536).
+
+
+### 3.6.35
+
+* `XxxxConsumer.hpp`: make `IsActive()` return `true` (even if `Producer`'s score is 0) when DTX is enabled (PR #534 due to issue #532).
+* Update NPM deps.
+
+
+### 3.6.34
+
+* Fix crash (regression, issue #529).
+
+
+### 3.6.33
+
+* Add missing `delete cb` that otherwise would leak (PR #527 based on PR #526 by @vpalmisano).
+* `router.pipeToRouter()`: Fix possible inconsistency in `pipeProducer.paused` status (as discussed in this [thread](https://mediasoup.discourse.group/t/concurrency-architecture/2515/) in the mediasoup forum).
 * Update `nlohmann/json` to 3.9.1.
 * Update `usrsctp`.
 * Update NPM deps.
+* Enhance Jitter calculation.
 
 
 ### 3.6.32
