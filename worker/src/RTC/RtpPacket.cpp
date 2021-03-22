@@ -1142,28 +1142,23 @@ namespace RTC
 		uint8_t templateIndex = (dependencyDescriptor->frame_dependency_template_id + 64 - dependencyDescriptor->template_id_offset) % 64;
 		if (templateIndex < dependencyDescriptor->templateCnt)
 		{
-			uint8_t FrameSpatialId = dependencyDescriptor->TemplateSpatialId[templateIndex];
-			uint8_t FrameTemporalId = dependencyDescriptor->TemplateTemporalId[templateIndex];
-			uint8_t frame_dti[3] = { 0 };
-			uint8_t FrameFdiffCnt = 0;
-			uint8_t FrameFdiff[3] = { 0 };
-			uint8_t frame_chain_fdiff[3] = { 0 };
-			uint8_t FrameMaxWidth = 0;
-			uint8_t FrameMaxHeight = 0;
+			FrameDependencyDescriptor frameDependencyDescriptor = { 0 };
+			frameDependencyDescriptor.FrameSpatialId = dependencyDescriptor->TemplateSpatialId[templateIndex];
+			frameDependencyDescriptor.FrameTemporalId = dependencyDescriptor->TemplateTemporalId[templateIndex];
 
 			if (dependencyDescriptor->custom_dtis_flag) {
 				// frame_dtis()
 				for (uint8_t dtIndex = 0; dtIndex < dependencyDescriptor->DtCnt; dtIndex++)
 				{
 					// See table A.1 below for meaning of DTI values.
-					frame_dti[dtIndex] = Utils::Bits::ReadBits(extenValue, extenLen, 2, bitOffset);
+					frameDependencyDescriptor.frame_dti[dtIndex] = Utils::Bits::ReadBits(extenValue, extenLen, 2, bitOffset);
 				}
 			}
 			else
 			{
 				for (uint8_t dtIndex = 0; dtIndex < 3; dtIndex++)
 				{
-					frame_dti[dtIndex] = dependencyDescriptor->template_dti[templateIndex][dtIndex];
+					frameDependencyDescriptor.frame_dti[dtIndex] = dependencyDescriptor->template_dti[templateIndex][dtIndex];
 				}
 			}
 
@@ -1173,17 +1168,17 @@ namespace RTC
 				while (next_fdiff_size)
 				{
 					uint8_t fdiff_minus_one = Utils::Bits::ReadBits(extenValue, extenLen, 4 * next_fdiff_size, bitOffset);
-					FrameFdiff[FrameFdiffCnt] = fdiff_minus_one + 1;
-					FrameFdiffCnt++;
+					frameDependencyDescriptor.FrameFdiff[frameDependencyDescriptor.FrameFdiffCnt] = fdiff_minus_one + 1;
+					frameDependencyDescriptor.FrameFdiffCnt++;
 					next_fdiff_size = Utils::Bits::ReadBits(extenValue, extenLen, 2, bitOffset);
 				}
 			}
 			else
 			{
-				FrameFdiffCnt = dependencyDescriptor->TemplateFdiffCnt[templateIndex];
+				frameDependencyDescriptor.FrameFdiffCnt = dependencyDescriptor->TemplateFdiffCnt[templateIndex];
 				for (uint8_t i = 0; i < 3; i++)
 				{
-					FrameFdiff[i] = dependencyDescriptor->TemplateFdiff[templateIndex][i];
+					frameDependencyDescriptor.FrameFdiff[i] = dependencyDescriptor->TemplateFdiff[templateIndex][i];
 				}
 			}
 
@@ -1192,49 +1187,49 @@ namespace RTC
 				// frame_chains()
 				for (uint8_t chainIndex = 0; chainIndex < dependencyDescriptor->chain_cnt; chainIndex++)
 				{
-					frame_chain_fdiff[chainIndex] = Utils::Bits::ReadBits(extenValue, extenLen, 8, bitOffset);
+					frameDependencyDescriptor.frame_chain_fdiff[chainIndex] = Utils::Bits::ReadBits(extenValue, extenLen, 8, bitOffset);
 				}
 			}
 			else
 			{
 				for (uint8_t i = 0; i < 3; i++)
 				{
-					frame_chain_fdiff[i] = dependencyDescriptor->template_chain_fdiff[templateIndex][i];
+					frameDependencyDescriptor.frame_chain_fdiff[i] = dependencyDescriptor->template_chain_fdiff[templateIndex][i];
 				}
 			}
 
 			if (dependencyDescriptor->resolutions_present_flag)
 			{
-				//FrameMaxWidth = max_render_width_minus_one[FrameSpatialId] + 1;
-				//FrameMaxHeight = max_render_height_minus_one[FrameSpatialId] + 1;
+				//frameDependencyDescriptor.FrameMaxWidth = max_render_width_minus_one[FrameSpatialId] + 1;
+				//frameDependencyDescriptor.FrameMaxHeight = max_render_height_minus_one[FrameSpatialId] + 1;
 			}
 
 			MS_DUMP(
-				"<DependencyDescriptor>"
+				"<FrameDependencyDescriptor>"
 				" FrameSpatialId: %u"
 				" FrameTemporalId: %u"
 				" FrameMaxWidth: %u"
 				" FrameMaxHeight: %u"
 				,
-				FrameSpatialId,
-				FrameTemporalId,			
-				FrameMaxWidth,
-				FrameMaxHeight
+				frameDependencyDescriptor.FrameSpatialId,
+				frameDependencyDescriptor.FrameTemporalId,			
+				frameDependencyDescriptor.FrameMaxWidth,
+				frameDependencyDescriptor.FrameMaxHeight
 			);
 			MS_DUMP("  frame_dti");
-			for (uint8_t i=0; i < sizeof(frame_dti); i++)
+			for (uint8_t i=0; i < sizeof(frameDependencyDescriptor.frame_dti); i++)
 			{
-				MS_DUMP("    [%u] %u", i, frame_dti[i]);
+				MS_DUMP("    [%u] %u", i, frameDependencyDescriptor.frame_dti[i]);
 			}
 			MS_DUMP("  FrameFdiff");
-			for (uint8_t i=0; i < sizeof(FrameFdiff); i++)
+			for (uint8_t i=0; i < sizeof(frameDependencyDescriptor.FrameFdiff); i++)
 			{
-				MS_DUMP("    [%u] %u", i, FrameFdiff[i]);
+				MS_DUMP("    [%u] %u", i, frameDependencyDescriptor.FrameFdiff[i]);
 			}
 			MS_DUMP("  frame_chain_fdiff");
-			for (uint8_t i=0; i < sizeof(frame_chain_fdiff); i++)
+			for (uint8_t i=0; i < sizeof(frameDependencyDescriptor.frame_chain_fdiff); i++)
 			{
-				MS_DUMP("    [%u] %u", i, frame_chain_fdiff[i]);
+				MS_DUMP("    [%u] %u", i, frameDependencyDescriptor.frame_chain_fdiff[i]);
 			}
 
 		}

@@ -151,6 +151,17 @@ namespace RTC
 			uint32_t active_decode_targets_bitmask;
 		};
 
+		struct FrameDependencyDescriptor {
+			uint8_t FrameSpatialId;
+			uint8_t FrameTemporalId;
+			uint8_t frame_dti[3];
+			uint8_t FrameFdiffCnt;
+			uint8_t FrameFdiff[3];
+			uint8_t frame_chain_fdiff[3];
+			uint8_t FrameMaxWidth;
+			uint8_t FrameMaxHeight;
+		};
+
 	public:
 		static bool IsRtp(const uint8_t* data, size_t len)
 		{

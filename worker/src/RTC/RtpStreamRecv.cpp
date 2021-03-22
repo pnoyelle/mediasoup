@@ -255,7 +255,10 @@ namespace RTC
 
 		// Process the packet at codec level.
 		if (packet->GetPayloadType() == GetPayloadType())
+		{
 			RTC::Codecs::Tools::ProcessRtpPacket(packet, GetMimeType());
+			this->ProcessPacketDependencyDescriptor(packet);
+		}
 
 		// Pass the packet to the NackGenerator.
 		if (this->params.useNack)
@@ -375,7 +378,10 @@ namespace RTC
 
 		// Process the packet at codec level.
 		if (packet->GetPayloadType() == GetPayloadType())
+		{
 			RTC::Codecs::Tools::ProcessRtpPacket(packet, GetMimeType());
+			this->ProcessPacketDependencyDescriptor(packet);
+		}
 
 		// Mark the packet as retransmitted.
 		RTC::RtpStream::PacketRetransmitted(packet);
@@ -406,6 +412,18 @@ namespace RTC
 		}
 
 		return false;
+	}
+
+	void RtpStreamRecv::ProcessPacketDependencyDescriptor(RTC::RtpPacket* packet)
+	{
+		MS_TRACE();
+
+		RtpPacket::DependencyDescriptor dependencyDescriptor{ 0 };
+		uint8_t dependencyDescriptorLen{ 0 };
+
+		// Read Dependency Descriptor
+		packet->ReadDependencyDescriptor(&dependencyDescriptor, dependencyDescriptorLen);
+		
 	}
 
 	RTC::RTCP::ReceiverReport* RtpStreamRecv::GetRtcpReceiverReport()
