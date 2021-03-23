@@ -418,11 +418,10 @@ namespace RTC
 	{
 		MS_TRACE();
 
-		RtpPacket::DependencyDescriptor dependencyDescriptor{ 0 };
 		uint8_t dependencyDescriptorLen{ 0 };
 
 		// Read Dependency Descriptor
-		packet->ReadDependencyDescriptor(&dependencyDescriptor, dependencyDescriptorLen);
+		packet->ReadDependencyDescriptor(&(this->dependencyDescriptor), dependencyDescriptorLen);
 		
 	}
 

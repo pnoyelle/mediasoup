@@ -106,6 +106,7 @@ namespace RTC
 		bool inactive{ false };
 		TransmissionCounter transmissionCounter;      // Valid media + valid RTX.
 		RTC::RtpDataCounter mediaTransmissionCounter; // Just valid media.
+		RtpPacket::DependencyDescriptor dependencyDescriptor;
 	};
 } // namespace RTC
 

@@ -118,19 +118,14 @@ namespace RTC
 		struct DependencyDescriptor
 		{
 			// https://aomediacodec.github.io/av1-rtp-spec/#a82-syntax
-			// mandatory_descriptor_fields
-			uint8_t start_of_frame : 1;
-			uint8_t end_of_frame : 1;
-			uint8_t frame_dependency_template_id : 6;
-			uint16_t frame_number;
 			// extended_descriptor_fields
-			uint8_t template_dependency_structure_present_flag : 1;
-			uint8_t active_decode_targets_present_flag : 1;
-			uint8_t custom_dtis_flag : 1;
-			uint8_t custom_fdiffs_flag : 1;
-			uint8_t custom_chains_flag : 1;
+			uint8_t template_dependency_structure_present_flag;
+			uint8_t active_decode_targets_present_flag;
+			uint8_t custom_dtis_flag;
+			uint8_t custom_fdiffs_flag;
+			uint8_t custom_chains_flag;
 			// template_dependency_structure
-			uint8_t template_id_offset : 6;
+			uint8_t template_id_offset;
 			uint8_t DtCnt;
 			uint8_t templateCnt;
 			// template_layers
@@ -138,26 +133,32 @@ namespace RTC
 			uint8_t TemplateTemporalId[3];
 			uint8_t maxTemporalId;
 			uint8_t maxSpatialId;
-			uint8_t template_dti[3][3];
-			uint8_t TemplateFdiff[3][3];
-			uint8_t TemplateFdiffCnt[3];
-			uint8_t FrameFdiff[3];
+			uint8_t template_dti[64][9];
+			uint8_t TemplateFdiff[64][9];
+			uint8_t TemplateFdiffCnt[9];
+			uint8_t FrameFdiff[9];
 			uint8_t chain_cnt;
-			uint8_t decode_target_protected_by[3];
-			uint8_t template_chain_fdiff[3][3];
-			uint8_t DecodeTargetSpatialId[3];
-			uint8_t DecodeTargetTemporalId[3];
-			uint8_t resolutions_present_flag : 1;
+			uint8_t decode_target_protected_by[9];
+			uint8_t template_chain_fdiff[64][9];
+			uint8_t DecodeTargetSpatialId[9];
+			uint8_t DecodeTargetTemporalId[9];
+			uint8_t resolutions_present_flag;
 			uint32_t active_decode_targets_bitmask;
 		};
 
 		struct FrameDependencyDescriptor {
+			// mandatory_descriptor_fields
+			uint8_t start_of_frame;
+			uint8_t end_of_frame;
+			uint8_t frame_dependency_template_id;
+			uint16_t frame_number;
+			//
 			uint8_t FrameSpatialId;
 			uint8_t FrameTemporalId;
-			uint8_t frame_dti[3];
+			uint8_t frame_dti[9];
 			uint8_t FrameFdiffCnt;
-			uint8_t FrameFdiff[3];
-			uint8_t frame_chain_fdiff[3];
+			uint8_t FrameFdiff[9];
+			uint8_t frame_chain_fdiff[9];
 			uint8_t FrameMaxWidth;
 			uint8_t FrameMaxHeight;
 		};
@@ -470,7 +471,8 @@ namespace RTC
 
 		bool ReadDependencyDescriptor(RtpPacket::DependencyDescriptor* dependencyDescriptor, uint8_t& length) const;
 
-		void DumpDependencyDescriptor(RtpPacket::DependencyDescriptor dependencyDescriptor, uint8_t length) const;
+		void DumpDependencyDescriptor(RtpPacket::DependencyDescriptor dependencyDescriptor) const;
+		void DumpFrameDependencyDescriptor(RtpPacket::FrameDependencyDescriptor frameDependencyDescriptor) const;
 
 		bool ReadSsrcAudioLevel(uint8_t& volume, bool& voice) const
 		{
