@@ -129,8 +129,8 @@ namespace RTC
 			uint8_t DtCnt;
 			uint8_t templateCnt;
 			// template_layers
-			uint8_t TemplateSpatialId[3]; // FIXME array sizes = ?
-			uint8_t TemplateTemporalId[3];
+			uint8_t TemplateSpatialId[9]; // FIXME array sizes = ?
+			uint8_t TemplateTemporalId[9];
 			uint8_t maxTemporalId;
 			uint8_t maxSpatialId;
 			uint8_t template_dti[64][9];
@@ -471,8 +471,10 @@ namespace RTC
 
 		bool ReadDependencyDescriptor(RtpPacket::DependencyDescriptor* dependencyDescriptor, uint8_t& length) const;
 
-		void DumpDependencyDescriptor(RtpPacket::DependencyDescriptor dependencyDescriptor) const;
-		void DumpFrameDependencyDescriptor(RtpPacket::FrameDependencyDescriptor frameDependencyDescriptor) const;
+		static char* DumpArray(uint8_t* data, uint16_t length);
+		static char* DumpArrayOfArrays(uint8_t* data, uint16_t length, uint16_t innerLength);
+		static void DumpDependencyDescriptor(RtpPacket::DependencyDescriptor dependencyDescriptor);
+		static void DumpFrameDependencyDescriptor(RtpPacket::FrameDependencyDescriptor frameDependencyDescriptor);
 
 		bool ReadSsrcAudioLevel(uint8_t& volume, bool& voice) const
 		{

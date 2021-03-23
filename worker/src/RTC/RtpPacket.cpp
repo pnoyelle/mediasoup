@@ -1204,15 +1204,69 @@ namespace RTC
 			}
 
 			// debug
-			//DumpFrameDependencyDescriptor(frameDependencyDescriptor);
+			DumpFrameDependencyDescriptor(frameDependencyDescriptor);
 		}
 	
 		return true;
 	}
 
-	void RtpPacket::DumpDependencyDescriptor(RtpPacket::DependencyDescriptor dependencyDescriptor) const
+	char* RtpPacket::DumpArray(uint8_t* data, uint16_t length)
+	{
+		char* buf = (char*) std::malloc(512);
+		std::memset(buf, 0, 512);
+		size_t pos = 0;
+		for (int i = 0; i < length; i++)
+		{
+			int ret = std::snprintf(buf + pos, 512 - pos, "%u ", data[i]);
+			if (ret <= 0)
+				break;
+			pos += ret;
+		}
+		return buf;
+	}
+
+	char* RtpPacket::DumpArrayOfArrays(uint8_t* data, uint16_t length, uint16_t innerLength)
+	{
+		char* buf = (char*) std::malloc(1024);
+		std::memset(buf, 0, 1024);
+		size_t pos = 0;
+		for (int i = 0; i < length; i++)
+		{
+			int ret = std::snprintf(buf + pos, 1024 - pos, "\n    [ ");
+			if (ret <= 0)
+				break;
+			pos += ret;
+			for (int j = 0; j < innerLength; j++)
+			{
+				int ret = std::snprintf(buf + pos, 1024 - pos, "%u ", *(data + i*innerLength + j));
+				if (ret <= 0)
+					break;
+				pos += ret;
+			}
+			ret = std::snprintf(buf + pos, 1024 - pos, "]");
+			if (ret <= 0)
+				break;
+			pos += ret;
+		}
+		return buf;
+	}
+
+	void RtpPacket::DumpDependencyDescriptor(RtpPacket::DependencyDescriptor dependencyDescriptor)
 	{
 		MS_TRACE();
+
+		char* TemplateSpatialId_buf = DumpArray(dependencyDescriptor.TemplateSpatialId, dependencyDescriptor.templateCnt);
+		char* TemplateTemporalId_buf = DumpArray(dependencyDescriptor.TemplateTemporalId, dependencyDescriptor.templateCnt);
+		
+		char* template_dti_buf = DumpArrayOfArrays((uint8_t*) dependencyDescriptor.template_dti, dependencyDescriptor.templateCnt, 9u);
+		char* TemplateFdiff_buf = DumpArrayOfArrays((uint8_t*) dependencyDescriptor.TemplateFdiff, dependencyDescriptor.templateCnt, 9u);
+		char* template_chain_fdiff_buf = DumpArrayOfArrays((uint8_t*) dependencyDescriptor.template_chain_fdiff, dependencyDescriptor.templateCnt, 9u);
+
+		char* TemplateFdiffCnt_buf = DumpArray(dependencyDescriptor.TemplateFdiffCnt, dependencyDescriptor.templateCnt);
+		char* FrameFdiff_buf = DumpArray(dependencyDescriptor.FrameFdiff, sizeof(dependencyDescriptor.FrameFdiff));
+		char* decode_target_protected_by_buf = DumpArray(dependencyDescriptor.decode_target_protected_by, sizeof(dependencyDescriptor.decode_target_protected_by));
+		char* DecodeTargetSpatialId_buf = DumpArray(dependencyDescriptor.DecodeTargetSpatialId, sizeof(dependencyDescriptor.DecodeTargetSpatialId));
+		char* DecodeTargetTemporalId_buf = DumpArray(dependencyDescriptor.DecodeTargetTemporalId, sizeof(dependencyDescriptor.DecodeTargetTemporalId));
 
 		MS_DUMP(
 			"<DependencyDescriptor>"
@@ -1229,80 +1283,77 @@ namespace RTC
 			"\n  maxSpatialId: %u"
 			"\n  resolutions_present_flag: %u"
 			"\n  active_decode_targets_bitmask: %u"
+
+			"\n  TemplateSpatialId: [ %s]"
+			"\n  TemplateTemporalId: [ %s]"
+			"\n  template_dti: [ %s\n  ]"
+			"\n  TemplateFdiff: [ %s\n  ]"
+			"\n  template_chain_fdiff: [ %s\n  ]"
+			"\n  TemplateFdiffCnt: [ %s]"
+			"\n  FrameFdiff: [ %s]"
+			"\n  decode_target_protected_by: [ %s]"
+			"\n  DecodeTargetSpatialId: [ %s]"
+			"\n  DecodeTargetTemporalId: [ %s]"
 			"\n</DependencyDescriptor>"
 			,
-			//
 			dependencyDescriptor.template_dependency_structure_present_flag,
 			dependencyDescriptor.active_decode_targets_present_flag,
 			dependencyDescriptor.custom_dtis_flag,
 			dependencyDescriptor.custom_fdiffs_flag,
 			dependencyDescriptor.custom_chains_flag,
-			// template_dependency_structure
 			dependencyDescriptor.template_id_offset,
 			dependencyDescriptor.DtCnt,
 			dependencyDescriptor.templateCnt,
 			dependencyDescriptor.chain_cnt,
-			
 			dependencyDescriptor.maxTemporalId, 
 			dependencyDescriptor.maxSpatialId,
-
 			dependencyDescriptor.resolutions_present_flag,
-			dependencyDescriptor.active_decode_targets_bitmask
+			dependencyDescriptor.active_decode_targets_bitmask,
+			TemplateSpatialId_buf,
+			TemplateTemporalId_buf,
+			template_dti_buf,
+			TemplateFdiff_buf,
+			template_chain_fdiff_buf,
+			TemplateFdiffCnt_buf,
+			FrameFdiff_buf,
+			decode_target_protected_by_buf,
+			DecodeTargetSpatialId_buf,
+			DecodeTargetTemporalId_buf
 		);
 
-		MS_DUMP("  TemplateSpatialId");
-		MS_DUMP_DATA(dependencyDescriptor.TemplateSpatialId, sizeof(dependencyDescriptor.TemplateSpatialId));
-
-		MS_DUMP("  TemplateTemporalId");
-		MS_DUMP_DATA(dependencyDescriptor.TemplateTemporalId, sizeof(dependencyDescriptor.TemplateTemporalId));
-
-		MS_DUMP("  template_dti");
-		for (uint8_t i = 0; i < dependencyDescriptor.templateCnt; i++)
-		{
-			MS_DUMP_DATA(dependencyDescriptor.template_dti[i], 9);
-		}
-
-		MS_DUMP("  TemplateFdiff");
-		for (uint8_t i = 0; i < dependencyDescriptor.templateCnt; i++)
-		{
-			MS_DUMP_DATA(dependencyDescriptor.TemplateFdiff[i], 9);
-		}
-
-		MS_DUMP("  TemplateFdiffCnt");
-		MS_DUMP_DATA(dependencyDescriptor.TemplateFdiffCnt, sizeof(dependencyDescriptor.TemplateFdiffCnt));
-
-		MS_DUMP("  FrameFdiff");
-		MS_DUMP_DATA(dependencyDescriptor.FrameFdiff, sizeof(dependencyDescriptor.FrameFdiff));
-
-		MS_DUMP("  decode_target_protected_by");
-		MS_DUMP_DATA(dependencyDescriptor.decode_target_protected_by, sizeof(dependencyDescriptor.decode_target_protected_by));
-
-		MS_DUMP("  template_chain_fdiff");
-		for (uint8_t i = 0; i < dependencyDescriptor.templateCnt; i++)
-		{
-			MS_DUMP_DATA(dependencyDescriptor.template_chain_fdiff[i], 9);
-		}
-
-		MS_DUMP("  DecodeTargetSpatialId");
-		MS_DUMP_DATA(dependencyDescriptor.DecodeTargetSpatialId, sizeof(dependencyDescriptor.DecodeTargetSpatialId));
-		
-		MS_DUMP("  DecodeTargetTemporalId");
-		MS_DUMP_DATA(dependencyDescriptor.DecodeTargetTemporalId, sizeof(dependencyDescriptor.DecodeTargetTemporalId));
+		std::free(TemplateSpatialId_buf);
+		std::free(TemplateTemporalId_buf);
+		std::free(template_dti_buf);
+		std::free(TemplateFdiff_buf);
+		std::free(template_chain_fdiff_buf);
+		std::free(TemplateFdiffCnt_buf);
+		std::free(FrameFdiff_buf);
+		std::free(decode_target_protected_by_buf);
+		std::free(DecodeTargetSpatialId_buf);
+		std::free(DecodeTargetTemporalId_buf);
 	}
 
-	void RtpPacket::DumpFrameDependencyDescriptor(RtpPacket::FrameDependencyDescriptor frameDependencyDescriptor) const
+	void RtpPacket::DumpFrameDependencyDescriptor(RtpPacket::FrameDependencyDescriptor frameDependencyDescriptor)
 	{
 		MS_TRACE();
+
+		char* frame_dti_buf = DumpArray(frameDependencyDescriptor.frame_dti, sizeof(frameDependencyDescriptor.frame_dti));
+		char* FrameFdiff_buf = DumpArray(frameDependencyDescriptor.FrameFdiff, sizeof(frameDependencyDescriptor.FrameFdiff));
+		char* frame_chain_fdiff_buf = DumpArray(frameDependencyDescriptor.frame_chain_fdiff, sizeof(frameDependencyDescriptor.frame_chain_fdiff));
+
 		MS_DUMP(
 			"<FrameDependencyDescriptor>"
-			"\n start_of_frame: %u"
-			"\n end_of_frame: %u"
-			"\n frame_dependency_template_id: %u"
-			"\n frame_number: %u"
-			"\n FrameSpatialId: %u"
-			"\n FrameTemporalId: %u"
-			"\n FrameMaxWidth: %u"
-			"\n FrameMaxHeight: %u"
+			"\n  start_of_frame: %u"
+			"\n  end_of_frame: %u"
+			"\n  frame_dependency_template_id: %u"
+			"\n  frame_number: %u"
+			"\n  FrameSpatialId: %u"
+			"\n  FrameTemporalId: %u"
+			"\n  FrameMaxWidth: %u"
+			"\n  FrameMaxHeight: %u"
+			"\n  frame_dti: [ %s]"
+			"\n  FrameFdiff: [ %s]"
+			"\n  frame_chain_fdiff: [ %s]"
 			"\n</FrameDependencyDescriptor>"
 			,
 			frameDependencyDescriptor.start_of_frame, 
@@ -1312,16 +1363,15 @@ namespace RTC
 			frameDependencyDescriptor.FrameSpatialId,
 			frameDependencyDescriptor.FrameTemporalId,			
 			frameDependencyDescriptor.FrameMaxWidth,
-			frameDependencyDescriptor.FrameMaxHeight
+			frameDependencyDescriptor.FrameMaxHeight,
+			frame_dti_buf,
+			FrameFdiff_buf,
+			frame_chain_fdiff_buf
 		);
-		MS_DUMP("  frame_dti");
-		MS_DUMP_DATA(frameDependencyDescriptor.frame_dti, sizeof(frameDependencyDescriptor.frame_dti));
 
-		MS_DUMP("  FrameFdiff");
-		MS_DUMP_DATA(frameDependencyDescriptor.FrameFdiff, sizeof(frameDependencyDescriptor.FrameFdiff));
-
-		MS_DUMP("  frame_chain_fdiff");
-		MS_DUMP_DATA(frameDependencyDescriptor.frame_chain_fdiff, sizeof(frameDependencyDescriptor.frame_chain_fdiff));
+		std::free(frame_dti_buf);
+		std::free(FrameFdiff_buf);
+		std::free(frame_chain_fdiff_buf);
 	}
 
 } // namespace RTC
