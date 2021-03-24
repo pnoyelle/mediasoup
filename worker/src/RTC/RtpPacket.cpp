@@ -1209,8 +1209,8 @@ namespace RTC
 			}
 
 			// debug
-			//if (frameDependencyDescriptor.start_of_frame)
-			//	DumpFrameDependencyDescriptor(frameDependencyDescriptor);
+			if (frameDependencyDescriptor.start_of_frame)
+				DumpFrameDependencyDescriptor(frameDependencyDescriptor);
 		}
 	
 		return true;
