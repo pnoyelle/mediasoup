@@ -1002,12 +1002,13 @@ namespace RTC
 				// template_layers
 				uint8_t temporalId = 0;
 				uint8_t spatialId = 0;
+				uint8_t templateCnt = 0;
 				uint8_t next_layer_idc = 0;
 				do {
-					MS_ASSERT(dependencyDescriptor->templateCnt < 64, "templateCnt should be < 64");
-					dependencyDescriptor->TemplateSpatialId[dependencyDescriptor->templateCnt] = spatialId;
-					dependencyDescriptor->TemplateTemporalId[dependencyDescriptor->templateCnt] = temporalId;
-					dependencyDescriptor->templateCnt++;
+					MS_ASSERT(templateCnt < 64, "templateCnt should be < 64");
+					dependencyDescriptor->TemplateSpatialId[templateCnt] = spatialId;
+					dependencyDescriptor->TemplateTemporalId[templateCnt] = temporalId;
+					templateCnt++;
 
 					next_layer_idc = Utils::Bits::ReadBits(extenValue, extenLen, 2, bitOffset);
 					// next_layer_idc == 0 - same sid and tid
@@ -1026,6 +1027,7 @@ namespace RTC
 					}
 				} while (next_layer_idc != 3);
 
+				dependencyDescriptor->templateCnt = templateCnt;
 				dependencyDescriptor->maxSpatialId = spatialId;
 
 				// template_dtis
