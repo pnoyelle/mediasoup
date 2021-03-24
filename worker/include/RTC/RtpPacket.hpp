@@ -137,6 +137,7 @@ namespace RTC
 			uint8_t TemplateFdiff[64][9];
 			uint8_t TemplateFdiffCnt[9];
 			uint8_t FrameFdiff[9];
+			uint8_t frameFdiffCnt;
 			uint8_t chain_cnt;
 			uint8_t decode_target_protected_by[9];
 			uint8_t template_chain_fdiff[64][9];
@@ -155,6 +156,8 @@ namespace RTC
 			//
 			uint8_t FrameSpatialId;
 			uint8_t FrameTemporalId;
+			uint8_t DtCnt;
+			uint8_t chain_cnt;
 			uint8_t frame_dti[9];
 			uint8_t FrameFdiffCnt;
 			uint8_t FrameFdiff[9];
