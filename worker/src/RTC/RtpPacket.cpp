@@ -1005,7 +1005,7 @@ namespace RTC
 				uint8_t templateCnt = 0;
 				uint8_t next_layer_idc = 0;
 				do {
-					MS_ASSERT(templateCnt < 64, "templateCnt should be < 64");
+					MS_ASSERT(templateCnt < MaxTemplateCnt, "templateCnt should be < 64");
 					dependencyDescriptor->TemplateSpatialId[templateCnt] = spatialId;
 					dependencyDescriptor->TemplateTemporalId[templateCnt] = temporalId;
 					templateCnt++;
@@ -1036,7 +1036,7 @@ namespace RTC
 					for (uint8_t dtIndex = 0; dtIndex < dependencyDescriptor->DtCnt; dtIndex++)
 					{
 						// See table A.1 below for meaning of DTI values.
-						MS_ASSERT(dtIndex <= 9, "invalid dtIndex inside DependencyDescriptor extension");
+						MS_ASSERT(dtIndex <= MaxDecodeTargets, "invalid dtIndex inside DependencyDescriptor extension");
 						dependencyDescriptor->template_dti[templateIndex][dtIndex] = Utils::Bits::ReadBits(extenValue, extenLen, 2, bitOffset);
 					}
 				}
@@ -1049,7 +1049,7 @@ namespace RTC
 					while (fdiff_follows_flag)
 					{
 						uint8_t fdiff_minus_one = Utils::Bits::ReadBits(extenValue, extenLen, 4, bitOffset);
-						MS_ASSERT(fdiffCnt <= 9, "invalid fdiffCnt inside DependencyDescriptor extension");
+						MS_ASSERT(fdiffCnt <= MaxDecodeTargets, "invalid fdiffCnt inside DependencyDescriptor extension");
 						dependencyDescriptor->TemplateFdiff[templateIndex][fdiffCnt] = fdiff_minus_one + 1;
 						fdiffCnt++;
 						fdiff_follows_flag = Utils::Bits::ReadBits(extenValue, extenLen, 1, bitOffset);
@@ -1086,7 +1086,7 @@ namespace RTC
 					{
 						for (uint8_t chainIndex = 0; chainIndex < dependencyDescriptor->chain_cnt; chainIndex++)
 						{
-							MS_ASSERT(chainIndex <= 9, "invalid chainIndex inside DependencyDescriptor extension");
+							MS_ASSERT(chainIndex <= MaxDecodeTargets, "invalid chainIndex inside DependencyDescriptor extension");
 							dependencyDescriptor->template_chain_fdiff[templateIndex][chainIndex] = Utils::Bits::ReadBits(extenValue, extenLen, 4, bitOffset);
 						}
 					}
@@ -1265,8 +1265,8 @@ namespace RTC
 		char* TemplateTemporalId_buf = DumpArray(dependencyDescriptor.TemplateTemporalId, dependencyDescriptor.templateCnt);
 		
 		char* template_dti_buf = DumpArrayOfArrays((uint8_t*) dependencyDescriptor.template_dti, dependencyDescriptor.templateCnt, dependencyDescriptor.DtCnt);
-		char* TemplateFdiff_buf = DumpArrayOfArrays((uint8_t*) dependencyDescriptor.TemplateFdiff, dependencyDescriptor.templateCnt, 9u);
-		char* template_chain_fdiff_buf = DumpArrayOfArrays((uint8_t*) dependencyDescriptor.template_chain_fdiff, dependencyDescriptor.templateCnt, 9u);
+		char* TemplateFdiff_buf = DumpArrayOfArrays((uint8_t*) dependencyDescriptor.TemplateFdiff, dependencyDescriptor.templateCnt, MaxDecodeTargets);
+		char* template_chain_fdiff_buf = DumpArrayOfArrays((uint8_t*) dependencyDescriptor.template_chain_fdiff, dependencyDescriptor.templateCnt, MaxDecodeTargets);
 
 		char* TemplateFdiffCnt_buf = DumpArray(dependencyDescriptor.TemplateFdiffCnt, dependencyDescriptor.templateCnt);
 		char* FrameFdiff_buf = DumpArray(dependencyDescriptor.FrameFdiff, dependencyDescriptor.frameFdiffCnt);

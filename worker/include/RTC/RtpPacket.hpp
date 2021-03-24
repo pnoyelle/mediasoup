@@ -114,7 +114,10 @@ namespace RTC
 		};
 
 	public:
-		/* Struct with dependecy-descriptor information. */
+		/* Struct with extended dependecy-descriptor information. */
+		static constexpr size_t MaxTemplateCnt{ 64u };
+		static constexpr size_t MaxDecodeTargets{ 32u };
+
 		struct DependencyDescriptor
 		{
 			// https://aomediacodec.github.io/av1-rtp-spec/#a82-syntax
@@ -129,24 +132,25 @@ namespace RTC
 			uint8_t DtCnt;
 			uint8_t templateCnt;
 			// template_layers
-			uint8_t TemplateSpatialId[9]; // FIXME array sizes = ?
-			uint8_t TemplateTemporalId[9];
+			uint8_t TemplateSpatialId[MaxTemplateCnt];
+			uint8_t TemplateTemporalId[MaxTemplateCnt];
 			uint8_t maxTemporalId;
 			uint8_t maxSpatialId;
-			uint8_t template_dti[64][9];
-			uint8_t TemplateFdiff[64][9];
-			uint8_t TemplateFdiffCnt[9];
-			uint8_t FrameFdiff[9];
+			uint8_t template_dti[MaxTemplateCnt][MaxDecodeTargets];
+			uint8_t TemplateFdiff[MaxTemplateCnt][MaxDecodeTargets];
+			uint8_t TemplateFdiffCnt[MaxTemplateCnt];
+			uint8_t FrameFdiff[MaxTemplateCnt];
 			uint8_t frameFdiffCnt;
 			uint8_t chain_cnt;
-			uint8_t decode_target_protected_by[9];
-			uint8_t template_chain_fdiff[64][9];
-			uint8_t DecodeTargetSpatialId[9];
-			uint8_t DecodeTargetTemporalId[9];
+			uint8_t decode_target_protected_by[MaxDecodeTargets];
+			uint8_t template_chain_fdiff[MaxTemplateCnt][MaxDecodeTargets];
+			uint8_t DecodeTargetSpatialId[MaxDecodeTargets];
+			uint8_t DecodeTargetTemporalId[MaxDecodeTargets];
 			uint8_t resolutions_present_flag;
 			uint32_t active_decode_targets_bitmask;
 		};
 
+		/* Struct with frame dependecy-descriptor information. */
 		struct FrameDependencyDescriptor {
 			// mandatory_descriptor_fields
 			uint8_t start_of_frame;
@@ -158,10 +162,10 @@ namespace RTC
 			uint8_t FrameTemporalId;
 			uint8_t DtCnt;
 			uint8_t chain_cnt;
-			uint8_t frame_dti[9];
+			uint8_t frame_dti[MaxDecodeTargets];
 			uint8_t FrameFdiffCnt;
-			uint8_t FrameFdiff[9];
-			uint8_t frame_chain_fdiff[9];
+			uint8_t FrameFdiff[MaxDecodeTargets];
+			uint8_t frame_chain_fdiff[MaxDecodeTargets];
 			uint8_t FrameMaxWidth;
 			uint8_t FrameMaxHeight;
 		};
