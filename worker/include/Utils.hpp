@@ -194,7 +194,7 @@ namespace Utils
 			return static_cast<size_t>(__builtin_popcount(mask));
 		}
 
-		static uint32_t ReadBits(uint8_t* data, uint32_t dataLength, uint32_t bitCount, uint32_t& bitOffset)
+		static uint32_t ReadBits(const uint8_t* data, uint32_t dataLength, uint32_t bitCount, uint32_t& bitOffset)
 		{
 			uint32_t value = 0;
 			uint32_t byteOffset = bitOffset / 8;
@@ -235,7 +235,7 @@ namespace Utils
 			return value;
 		}
 
-		static uint32_t ReadBitsNonSymmetric(uint8_t* data, uint32_t dataLength, uint32_t n, uint32_t& bitOffset)
+		static uint32_t ReadBitsNonSymmetric(const uint8_t* data, uint32_t dataLength, uint32_t n, uint32_t& bitOffset)
 		{
 			uint32_t w = 0;
 			uint32_t x = n;
@@ -251,6 +251,22 @@ namespace Utils
 				return v;
 			uint8_t extra_bit = ReadBits(data, dataLength, 1, bitOffset);
 			return (v << 1) - m + extra_bit;
+		}
+
+		// https://aomediacodec.github.io/av1-spec/#leb128
+		static uint32_t ReadBitsLeb128(const uint8_t* data, uint32_t dataLength, uint32_t& bitOffset)
+		{
+			uint32_t value = 0;
+			uint32_t Leb128Bytes = 0;
+			for (uint32_t i = 0; i < 8; i++)
+			{
+				uint32_t leb128_byte = ReadBits(data, dataLength, 8, bitOffset);
+				value |= ((leb128_byte & 0x7f) << (i * 7));
+				Leb128Bytes += 1;	 
+				if (!(leb128_byte & 0x80))	 
+					break;
+			}	 
+			return value;
 		}
 
 	};

@@ -964,7 +964,7 @@ namespace RTC
 		MS_TRACE();
 
 		uint8_t extenLen;
-		uint8_t* extenValue = GetExtension(this->dependencyDescriptorExtensionId, extenLen);
+		const uint8_t* extenValue = GetExtension(this->dependencyDescriptorExtensionId, extenLen);
 
 		if (!extenValue || extenLen < 3u)
 		{
@@ -1209,7 +1209,7 @@ namespace RTC
 			}
 
 			// debug
-			if (frameDependencyDescriptor.start_of_frame)
+			if (frameDependencyDescriptor.start_of_frame && !(frameDependencyDescriptor.frame_number % 100))
 				DumpFrameDependencyDescriptor(frameDependencyDescriptor);
 		}
 	

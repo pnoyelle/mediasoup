@@ -77,14 +77,15 @@ namespace RTC
 				void Dump() const override;
 
 				// OBU header
-				uint8_t z : 1; // first OBU fragment
-				uint8_t y : 1; // last OBU fragment
-				uint8_t w : 2; // number of OBU fragments
-				uint8_t n : 1; // first packet of a coded video sequence
+				uint8_t z : 1; // continuation of an OBU fragment
+				uint8_t y : 1; // OBU fragment will continue in the next packet
+				uint8_t w : 2; // the number of OBU fragments
+				uint8_t n : 1; // if it is the first packet of a coded video sequence
 
-				uint8_t obu_type : 4; // 
-				uint8_t obu_extension_flag : 1; // 
-				uint8_t obu_has_size_field : 1; // 
+				uint32_t obu_size;
+				uint8_t obu_type : 4;
+				uint8_t obu_extension_flag : 1;
+				uint8_t obu_has_size_field : 1;
 
 				uint8_t temporal_id : 3;
 				uint8_t spatial_id : 2;
@@ -97,6 +98,7 @@ namespace RTC
 				uint8_t b : 1; // B: Start of a layer frame.
 				uint8_t e : 1; // E: End of a layer frame.
 				uint8_t v : 1; // V: Scalability structure (SS) data present.
+				
 				// Extension fields.
 				uint16_t pictureId{ 0 };
 				uint8_t slIndex{ 0 };

@@ -51,14 +51,16 @@ namespace RTC
 
 			std::unique_ptr<PayloadDescriptor> payloadDescriptor(new PayloadDescriptor());
 
-			size_t offset{ 0 };
-			uint8_t byte = data[offset];
+			uint32_t bitOffset{ 0 };
 
-			payloadDescriptor->z = (byte >> 7) & 0x01;
-			payloadDescriptor->y = (byte >> 6) & 0x01;
-			payloadDescriptor->w = (byte >> 4) & 0x03;
-			payloadDescriptor->n = (byte >> 3) & 0x01;
+			// AV1 Aggregation Header (https://aomediacodec.github.io/av1-rtp-spec/#44-av1-aggregation-header)
+			payloadDescriptor->z = Utils::Bits::ReadBits(data, len, 1, bitOffset);
+			payloadDescriptor->y = Utils::Bits::ReadBits(data, len, 1, bitOffset);
+			payloadDescriptor->w = Utils::Bits::ReadBits(data, len, 2, bitOffset);
+			payloadDescriptor->n = Utils::Bits::ReadBits(data, len, 1, bitOffset);
+			bitOffset += 3;
 
+			// continuation of an OBU fragment
 			if (payloadDescriptor->z == 1)
 			{
 				return payloadDescriptor.release();
@@ -67,46 +69,67 @@ namespace RTC
 			// https://aomediacodec.github.io/av1-spec/av1-spec.pdf 5.3.1
 			if (payloadDescriptor->n)
 			{
-				MS_WARN_TAG(rtp, "z=%u y=%u w=%u n=%u", 
+				MS_DUMP("<av1-aggregation-header> z=%u y=%u w=%u n=%u",
 					payloadDescriptor->z, payloadDescriptor->y, payloadDescriptor->w, payloadDescriptor->n
 				);
 				payloadDescriptor->isKeyFrame = true;
 			}
 
-			//
-			if (payloadDescriptor->w) {
-				offset += 1;
-			} else {
-				//
+			// If set to 0, each OBU element MUST be preceded by a length field.
+			if (payloadDescriptor->w == 0) {
+				Utils::Bits::ReadBitsLeb128(data, len, bitOffset);		
 			}
 
-			byte = data[offset];
-
-			// 5.3.2.
-			payloadDescriptor->obu_type = (byte >> 3) & 0x0F;
-			payloadDescriptor->obu_extension_flag = (byte >> 2) & 0x01;
-			payloadDescriptor->obu_has_size_field = (byte >> 1) & 0x01;
+			// https://aomediacodec.github.io/av1-spec/#obu-header-syntax
+			bitOffset += 1;
+			payloadDescriptor->obu_type = Utils::Bits::ReadBits(data, len, 4, bitOffset);
+			payloadDescriptor->obu_extension_flag = Utils::Bits::ReadBits(data, len, 1, bitOffset);
+			payloadDescriptor->obu_has_size_field = Utils::Bits::ReadBits(data, len, 1, bitOffset);
+			bitOffset += 1;
 			
-			// 5.3.3
+			// https://aomediacodec.github.io/av1-spec/#obu-extension-header-syntax
 			if (payloadDescriptor->obu_extension_flag)
 			{
-				offset += 1;
-				byte = data[offset];
-
-				payloadDescriptor->temporal_id = (byte >> 5) & 0x07;
-				payloadDescriptor->spatial_id = (byte >> 3) & 0x03;
+				payloadDescriptor->tlIndex = Utils::Bits::ReadBits(data, len, 3, bitOffset);
+				payloadDescriptor->hasTlIndex = true;
+				payloadDescriptor->slIndex = Utils::Bits::ReadBits(data, len, 2, bitOffset);
+				payloadDescriptor->hasSlIndex = true;
+				bitOffset += 3;
 			}
 
-			/* MS_WARN_TAG(rtp, "z=%u y=%u w=%u n=%u | obu_type=%u obu_extension_flag=%u obu_has_size_field=%u temporal_id=%u spatial_id=%u", 
-				payloadDescriptor->z, payloadDescriptor->y, payloadDescriptor->w, payloadDescriptor->n,
-				payloadDescriptor->obu_type, payloadDescriptor->obu_extension_flag, payloadDescriptor->obu_has_size_field,
-				payloadDescriptor->temporal_id, payloadDescriptor->spatial_id
-			); */
+			if (payloadDescriptor->obu_has_size_field)
+			{
+				payloadDescriptor->obu_size = Utils::Bits::ReadBitsLeb128(data, len, bitOffset);
+			}
+			else
+			{
+        		// payloadDescriptor->obu_size = sz - 1 - payloadDescriptor->obu_extension_flag	 
+    		}
+
+			MS_DUMP("<av1-aggregation-header> z=%u y=%u w=%u n=%u",
+				payloadDescriptor->z, payloadDescriptor->y, payloadDescriptor->w, payloadDescriptor->n
+			);
+			MS_DUMP(
+				"<av1-obu-header>"
+				" obu_type=%u"
+				" obu_extension_flag=%u"
+				" obu_has_size_field=%u"
+				" obu_size=%u"
+				" slIndex=%u"
+				" tlIndex=%u"
+				,
+				payloadDescriptor->obu_type, 
+				payloadDescriptor->obu_extension_flag, 
+				payloadDescriptor->obu_has_size_field, 
+				payloadDescriptor->obu_size,
+				payloadDescriptor->slIndex, 
+				payloadDescriptor->tlIndex
+			);
 
 			if (
 				payloadDescriptor->obu_type != OBU_SEQUENCE_HEADER &&
 				payloadDescriptor->obu_type != OBU_TEMPORAL_DELIMITER &&
-				payloadDescriptor->obu_extension_flag
+				payloadDescriptor->obu_extension_flag == 1
 			) 
 			{
 				
@@ -119,7 +142,8 @@ namespace RTC
 
 			}
 
-			/* payloadDescriptor->i = (byte >> 7) & 0x01;
+			/* VP9
+			payloadDescriptor->i = (byte >> 7) & 0x01;
 			payloadDescriptor->p = (byte >> 6) & 0x01;
 			payloadDescriptor->l = (byte >> 5) & 0x01;
 			payloadDescriptor->f = (byte >> 4) & 0x01;
