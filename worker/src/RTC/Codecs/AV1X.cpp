@@ -4,32 +4,16 @@
 #include "RTC/Codecs/AV1X.hpp"
 #include "Logger.hpp"
 
-/* uint32_t decodeLeb128(uint8_t* data, uint32_t size) {
-	size_t result{ 0 };
-	size_t shift{ 0 };
-	size_t offset{ 0 };
-	while (offset < size) {
-		uint8_t byte = data[offset];
-		result |= (byte & 0x7f) << shift;
-		shift += 7;
-		offset += 1;
-		if ((0x80 & byte) == 0) {
-			return result;
-		}
-	}
-	return result;
-} */
-
 enum ObuTypes {
-	OBU_SEQUENCE_HEADER = 1,
-	OBU_TEMPORAL_DELIMITER,
-	OBU_FRAME_HEADER,
-	OBU_TILE_GROUP,
-	OBU_METADATA,
-	OBU_FRAME,
-	OBU_REDUNDANT_FRAME_HEADER,
-	OBU_TILE_LIST,
-	OBU_PADDING = 15
+	OBU_SEQUENCE_HEADER 		= 1,
+	OBU_TEMPORAL_DELIMITER 		= 2,
+	OBU_FRAME_HEADER 			= 3,
+	OBU_TILE_GROUP 				= 4,
+	OBU_METADATA 				= 5,
+	OBU_FRAME 					= 6,
+	OBU_REDUNDANT_FRAME_HEADER 	= 7,
+	OBU_TILE_LIST 				= 8,
+	OBU_PADDING 				= 15
 };
 
 namespace RTC
@@ -106,25 +90,28 @@ namespace RTC
         		// payloadDescriptor->obu_size = sz - 1 - payloadDescriptor->obu_extension_flag	 
     		}
 
-			MS_DUMP("<av1-aggregation-header> z=%u y=%u w=%u n=%u",
-				payloadDescriptor->z, payloadDescriptor->y, payloadDescriptor->w, payloadDescriptor->n
-			);
-			MS_DUMP(
-				"<av1-obu-header>"
-				" obu_type=%u"
-				" obu_extension_flag=%u"
-				" obu_has_size_field=%u"
-				" obu_size=%u"
-				" slIndex=%u"
-				" tlIndex=%u"
-				,
-				payloadDescriptor->obu_type, 
-				payloadDescriptor->obu_extension_flag, 
-				payloadDescriptor->obu_has_size_field, 
-				payloadDescriptor->obu_size,
-				payloadDescriptor->slIndex, 
-				payloadDescriptor->tlIndex
-			);
+			/* {
+				MS_DUMP("<av1-aggregation-header> z=%u y=%u w=%u n=%u",
+					payloadDescriptor->z, payloadDescriptor->y, payloadDescriptor->w, payloadDescriptor->n
+				);
+				MS_DUMP(
+					"<av1-obu-header>"
+					" obu_type=%u"
+					" obu_extension_flag=%u"
+					" obu_has_size_field=%u"
+					" obu_size=%u"
+					" slIndex=%u"
+					" tlIndex=%u"
+					,
+					payloadDescriptor->obu_type, 
+					payloadDescriptor->obu_extension_flag, 
+					payloadDescriptor->obu_has_size_field, 
+					payloadDescriptor->obu_size,
+					payloadDescriptor->slIndex, 
+					payloadDescriptor->tlIndex
+				);
+			} */
+
 
 			if (
 				payloadDescriptor->obu_type != OBU_SEQUENCE_HEADER &&
@@ -141,76 +128,13 @@ namespace RTC
 				
 
 			}
-
-			/* VP9
-			payloadDescriptor->i = (byte >> 7) & 0x01;
-			payloadDescriptor->p = (byte >> 6) & 0x01;
-			payloadDescriptor->l = (byte >> 5) & 0x01;
-			payloadDescriptor->f = (byte >> 4) & 0x01;
-			payloadDescriptor->b = (byte >> 3) & 0x01;
-			payloadDescriptor->e = (byte >> 2) & 0x01;
-			payloadDescriptor->v = (byte >> 1) & 0x01;
-
-			if (payloadDescriptor->i)
+			else if (payloadDescriptor->obu_type == OBU_FRAME_HEADER || 
+					 payloadDescriptor->obu_type == OBU_REDUNDANT_FRAME_HEADER)
 			{
-				if (len < ++offset + 1)
-					return nullptr;
 
-				byte = data[offset];
 
-				if (byte >> 7 & 0x01)
-				{
-					if (len < ++offset + 1)
-						return nullptr;
 
-					payloadDescriptor->pictureId = (byte & 0x7F) << 8;
-					payloadDescriptor->pictureId += data[offset];
-					payloadDescriptor->hasTwoBytesPictureId = true;
-				}
-				else
-				{
-					payloadDescriptor->pictureId           = byte & 0x7F;
-					payloadDescriptor->hasOneBytePictureId = true;
-				}
-
-				payloadDescriptor->hasPictureId = true;
 			}
-
-			if (payloadDescriptor->l)
-			{
-				if (len < ++offset + 1)
-					return nullptr;
-
-				byte = data[offset];
-
-				payloadDescriptor->interLayerDependency = byte & 0x01;
-				payloadDescriptor->switchingUpPoint     = byte >> 4 & 0x01;
-				payloadDescriptor->slIndex              = byte >> 1 & 0x07;
-				payloadDescriptor->tlIndex              = byte >> 5 & 0x07;
-				payloadDescriptor->hasSlIndex           = true;
-				payloadDescriptor->hasTlIndex           = true;
-
-				if (len < ++offset + 1)
-					return nullptr;
-
-				// Read TL0PICIDX if flexible mode is unset.
-				if (!payloadDescriptor->f)
-				{
-					payloadDescriptor->tl0PictureIndex    = data[offset];
-					payloadDescriptor->hasTl0PictureIndex = true;
-				}
-			}
-
-			// clang-format off
-			if (
-				!payloadDescriptor->p &&
-				payloadDescriptor->b &&
-				payloadDescriptor->slIndex == 0
-			)
-			// clang-format on
-			{
-				payloadDescriptor->isKeyFrame = true;
-			} */
 
 			return payloadDescriptor.release();
 		}
@@ -350,7 +274,7 @@ namespace RTC
 					  packetTemporalLayer);
 
 					tmpSpatialLayer  = context->GetTargetSpatialLayer();
-					tmpTemporalLayer = 0; // Just in case.
+					//tmpTemporalLayer = 0; // Just in case.
 				}
 			}
 			// Downgrade current spatial layer if needed.
@@ -371,7 +295,7 @@ namespace RTC
 						  packetTemporalLayer);
 
 						tmpSpatialLayer  = context->GetTargetSpatialLayer();
-						tmpTemporalLayer = 0; // Just in case.
+						//tmpTemporalLayer = 0; // Just in case.
 					}
 				}
 				// In full SVC we do not need a keyframe.
@@ -380,7 +304,7 @@ namespace RTC
 					// clang-format off
 					if (
 						packetSpatialLayer == context->GetTargetSpatialLayer() &&
-						this->payloadDescriptor->e
+						!this->payloadDescriptor->y
 					)
 					// clang-format on
 					{
@@ -393,14 +317,22 @@ namespace RTC
 						  packetTemporalLayer);
 
 						tmpSpatialLayer  = context->GetTargetSpatialLayer();
-						tmpTemporalLayer = 0; // Just in case.
+						//tmpTemporalLayer = 0; // Just in case.
 					}
 				}
 			}
 
 			// Filter spatial layers higher than current one (unless old packet).
-			if (packetSpatialLayer > tmpSpatialLayer && !isOldPacket)
+			/* if (packetSpatialLayer > tmpSpatialLayer && !isOldPacket)
+			{
+				MS_DUMP(
+					"filter spatial layer current: %u target: %u packet: S%u T%u ",
+					context->GetCurrentSpatialLayer(),
+					context->GetTargetSpatialLayer(),
+					packetSpatialLayer,
+					packetTemporalLayer);
 				return false;
+			} */
 
 			// Check and handle temporal layer (unless old packet).
 			if (!isOldPacket)
@@ -415,7 +347,7 @@ namespace RTC
 							context->GetCurrentTemporalLayer() == -1 ||
 							this->payloadDescriptor->switchingUpPoint
 						) &&
-						this->payloadDescriptor->b
+						!this->payloadDescriptor->z
 					)
 					// clang-format on
 					{
@@ -436,7 +368,7 @@ namespace RTC
 					// clang-format off
 					if (
 						packetTemporalLayer == context->GetTargetTemporalLayer() &&
-						this->payloadDescriptor->e
+						!this->payloadDescriptor->y
 					)
 					// clang-format on
 					{
@@ -453,12 +385,31 @@ namespace RTC
 				}
 
 				// Filter temporal layers higher than current one.
-				if (packetTemporalLayer > tmpTemporalLayer)
+				/* if (packetTemporalLayer > tmpTemporalLayer)
+				{
+					MS_DUMP(
+						"filter temporal layer current: %u target: %u packet: S%u T%u ",
+						context->GetCurrentSpatialLayer(),
+						context->GetTargetSpatialLayer(),
+						packetSpatialLayer,
+						packetTemporalLayer);
+				
 					return false;
+				} */
 			}
 
+			/* if (packetSpatialLayer == 0 && packetTemporalLayer == 1)
+			{
+				MS_DUMP(
+					"filter packet: S%u T%u ",
+					packetSpatialLayer,
+					packetTemporalLayer);
+			
+				return false;
+			} */
+
 			// Set marker bit if needed.
-			if (packetSpatialLayer == tmpSpatialLayer && this->payloadDescriptor->e)
+			if (packetSpatialLayer == tmpSpatialLayer && !this->payloadDescriptor->y)
 				marker = true;
 
 			// Update the pictureId manager.
