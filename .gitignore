@@ -38,5 +38,15 @@
 # Vistual Studio Code stuff.
 /.vscode/
 
-# yarn generated lockfile
+# JetBrains IDE stuff.
+/.idea/
+
 yarn.lock
+
+# Rust.
+/target
+/Cargo.lock
+
+# Rust examples.
+/rust/examples-frontend/*/node_modules
+/rust/examples-frontend/*/package-lock.json
