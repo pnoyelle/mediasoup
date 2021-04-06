@@ -23,13 +23,7 @@ SCENARIO("Utils::Bits::CountSetBits()")
 
 SCENARIO("Utils::Bits::ReadBits()")
 {
-	uint8_t data[] = {
-		0b10110000,
-		0b00001111,
-		0b11110011,
-		0b00001011,
-		0b11001111
-	};
+	uint8_t data[]     = { 0b10110000, 0b00001111, 0b11110011, 0b00001011, 0b11001111 };
 	uint32_t bitOffset = 0;
 
 	REQUIRE(Utils::Bits::ReadBits(data, sizeof(data), 1, bitOffset) == 0b1);
@@ -54,10 +48,7 @@ SCENARIO("Utils::Bits::ReadBits()")
 
 SCENARIO("Utils::Bits::ReadBitsNonSymmetric()")
 {
-	uint8_t data[] = {
-		0b00011011,
-		0b01110000
-	};
+	uint8_t data[]     = { 0b00011011, 0b01110000 };
 	uint32_t bitOffset = 0;
 
 	REQUIRE(Utils::Bits::ReadBitsNonSymmetric(data, sizeof(data), 5, bitOffset) == 0b000);

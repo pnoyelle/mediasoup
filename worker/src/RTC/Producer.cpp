@@ -259,7 +259,9 @@ namespace RTC
 				this->rtpHeaderExtensionIds.frameMarking = exten.id;
 			}
 
-			if (this->rtpHeaderExtensionIds.dependencyDescriptor == 0u && exten.type == RTC::RtpHeaderExtensionUri::Type::DEPENDENCY_DESCRIPTOR)
+			if (
+			  this->rtpHeaderExtensionIds.dependencyDescriptor == 0u &&
+			  exten.type == RTC::RtpHeaderExtensionUri::Type::DEPENDENCY_DESCRIPTOR)
 			{
 				this->rtpHeaderExtensionIds.dependencyDescriptor = exten.id;
 			}

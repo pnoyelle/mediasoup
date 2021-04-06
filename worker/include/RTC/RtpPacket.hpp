@@ -151,7 +151,8 @@ namespace RTC
 		};
 
 		/* Struct with frame dependecy-descriptor information. */
-		struct FrameDependencyDescriptor {
+		struct FrameDependencyDescriptor
+		{
 			// mandatory_descriptor_fields
 			uint8_t start_of_frame;
 			uint8_t end_of_frame;
@@ -476,12 +477,14 @@ namespace RTC
 			return true;
 		}
 
-		bool ReadDependencyDescriptor(RtpPacket::DependencyDescriptor* dependencyDescriptor, uint8_t& length) const;
+		bool ReadDependencyDescriptor(
+		  RtpPacket::DependencyDescriptor* dependencyDescriptor, uint8_t& length) const;
 
 		static char* DumpArray(uint8_t* data, uint16_t length);
 		static char* DumpArrayOfArrays(uint8_t* data, uint16_t length, uint16_t innerLength);
 		static void DumpDependencyDescriptor(RtpPacket::DependencyDescriptor dependencyDescriptor);
-		static void DumpFrameDependencyDescriptor(RtpPacket::FrameDependencyDescriptor frameDependencyDescriptor);
+		static void DumpFrameDependencyDescriptor(
+		  RtpPacket::FrameDependencyDescriptor frameDependencyDescriptor);
 
 		bool ReadSsrcAudioLevel(uint8_t& volume, bool& voice) const
 		{

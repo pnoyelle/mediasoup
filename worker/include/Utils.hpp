@@ -194,12 +194,13 @@ namespace Utils
 			return static_cast<size_t>(__builtin_popcount(mask));
 		}
 
-		static uint32_t ReadBits(const uint8_t* data, uint32_t dataLength, uint32_t bitCount, uint32_t& bitOffset)
+		static uint32_t ReadBits(
+		  const uint8_t* data, uint32_t dataLength, uint32_t bitCount, uint32_t& bitOffset)
 		{
-			uint32_t value = 0;
-			uint32_t byteOffset = bitOffset / 8;
+			uint32_t value       = 0;
+			uint32_t byteOffset  = bitOffset / 8;
 			uint8_t skipBitsLeft = bitOffset - byteOffset * 8;
-			uint32_t readBits = 0;
+			uint32_t readBits    = 0;
 
 			// limit the number of output bits to uint32_t
 			bitCount = bitCount > 32 ? 32 : bitCount;
@@ -207,7 +208,7 @@ namespace Utils
 			while (readBits < bitCount && byteOffset < dataLength)
 			{
 				uint8_t byte = data[byteOffset];
-				
+
 				// skips the the first offset in the first iteration
 				if (skipBitsLeft > 0)
 				{
@@ -223,7 +224,7 @@ namespace Utils
 				}
 
 				value = (value << (8 - skipBitsLeft - skipBitsRight)) | byte;
-				
+
 				readBits += 8 - skipBitsLeft - skipBitsRight;
 				byteOffset++;
 				skipBitsLeft = 0;
@@ -235,7 +236,8 @@ namespace Utils
 			return value;
 		}
 
-		static uint32_t ReadBitsNonSymmetric(const uint8_t* data, uint32_t dataLength, uint32_t n, uint32_t& bitOffset)
+		static uint32_t ReadBitsNonSymmetric(
+		  const uint8_t* data, uint32_t dataLength, uint32_t n, uint32_t& bitOffset)
 		{
 			uint32_t w = 0;
 			uint32_t x = n;
@@ -256,19 +258,18 @@ namespace Utils
 		// https://aomediacodec.github.io/av1-spec/#leb128
 		static uint32_t ReadBitsLeb128(const uint8_t* data, uint32_t dataLength, uint32_t& bitOffset)
 		{
-			uint32_t value = 0;
+			uint32_t value       = 0;
 			uint32_t Leb128Bytes = 0;
 			for (uint32_t i = 0; i < 8; i++)
 			{
 				uint32_t leb128_byte = ReadBits(data, dataLength, 8, bitOffset);
 				value |= ((leb128_byte & 0x7f) << (i * 7));
-				Leb128Bytes += 1;	 
-				if (!(leb128_byte & 0x80))	 
+				Leb128Bytes += 1;
+				if (!(leb128_byte & 0x80))
 					break;
-			}	 
+			}
 			return value;
 		}
-
 	};
 
 	class Crypto

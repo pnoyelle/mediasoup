@@ -422,7 +422,6 @@ namespace RTC
 
 		// Read Dependency Descriptor
 		packet->ReadDependencyDescriptor(&(this->dependencyDescriptor), dependencyDescriptorLen);
-		
 	}
 
 	RTC::RTCP::ReceiverReport* RtpStreamRecv::GetRtcpReceiverReport()
