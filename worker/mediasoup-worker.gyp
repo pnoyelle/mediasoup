@@ -19,6 +19,7 @@
     'sources':
     [
       # C++ source files.
+      'src/lib.cpp',
       'src/DepLibSRTP.cpp',
       'src/DepLibUV.cpp',
       'src/DepLibWebRTC.cpp',
@@ -130,6 +131,7 @@
       'src/RTC/RTCP/XrDelaySinceLastRr.cpp',
       'src/RTC/RTCP/XrReceiverReferenceTime.cpp',
       # C++ include files.
+      'include/lib.hpp',
       'include/DepLibSRTP.hpp',
       'include/DepLibUV.hpp',
       'include/DepLibWebRTC.hpp',
@@ -341,7 +343,12 @@
       [
         # C++ source files.
         'src/main.cpp'
-      ]
+      ],
+	  'defines': [ 'MS_EXECUTABLE' ]
+    },
+    {
+      'target_name': 'libmediasoup-worker',
+      'type': 'static_library'
     },
     {
       'target_name': 'mediasoup-worker-test',

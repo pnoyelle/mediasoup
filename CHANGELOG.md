@@ -1,6 +1,28 @@
 # Changelog
 
 
+### 3.7.0
+
+* Welcome to `mediasoup-rust`! Authored by @nazar-pc (PRs #518 and #533).
+* Update NPM deps.
+* Update `usrsctp`.
+
+
+### 3.6.37
+
+* Fix crash if empty `fingerprints` array is given in `webrtcTransport.connect()` (issue #537).
+
+### 3.6.36
+
+* `Producer`: Add new stats field 'rtxPacketsDiscarded' (PR #536).
+
+
+### 3.6.35
+
+* `XxxxConsumer.hpp`: make `IsActive()` return `true` (even if `Producer`'s score is 0) when DTX is enabled (PR #534 due to issue #532).
+* Update NPM deps.
+
+
 ### 3.6.34
 
 * Fix crash (regression, issue #529).
