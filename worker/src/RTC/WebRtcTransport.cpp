@@ -1027,6 +1027,8 @@ namespace RTC
 
 		// Pass the packet to the parent transport.
 		RTC::Transport::ReceiveRtpPacket(packet);
+
+		// RTC::Transport::ReceiveRtpPacket_async(packet);
 	}
 
 	inline void WebRtcTransport::OnRtcpDataReceived(

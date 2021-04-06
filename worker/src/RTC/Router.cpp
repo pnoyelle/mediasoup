@@ -684,6 +684,7 @@ namespace RTC
 				packet->UpdateMid(mid);
 
 			consumer->SendRtpPacket(packet);
+			// consumer->SendRtpPacket_async(packet);
 		}
 
 		auto it = this->mapProducerRtpObservers.find(producer);
