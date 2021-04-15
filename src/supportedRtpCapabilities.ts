@@ -108,6 +108,42 @@ const supportedRtpCapabilities: RtpCapabilities =
 			]
 		},
 		{
+			kind         : 'audio',
+			mimeType     : 'audio/L16',
+			clockRate    : 8000,
+			rtcpFeedback :
+			[
+				{ type: 'transport-cc' }
+			]
+		},
+		{
+			kind         : 'audio',
+			mimeType     : 'audio/L16',
+			clockRate    : 16000,
+			rtcpFeedback :
+			[
+				{ type: 'transport-cc' }
+			]
+		},
+		{
+			kind         : 'audio',
+			mimeType     : 'audio/L16',
+			clockRate    : 32000,
+			rtcpFeedback :
+			[
+				{ type: 'transport-cc' }
+			]
+		},
+		{
+			kind         : 'audio',
+			mimeType     : 'audio/L16',
+			clockRate    : 48000,
+			rtcpFeedback :
+			[
+				{ type: 'transport-cc' }
+			]
+		},
+		{
 			kind                 : 'audio',
 			mimeType             : 'audio/CN',
 			preferredPayloadType : 13,

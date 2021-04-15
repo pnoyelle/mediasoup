@@ -31,6 +31,7 @@ namespace RTC
 		{ "g722",            RtpCodecMimeType::Subtype::G722            },
 		{ "ilbc",            RtpCodecMimeType::Subtype::ILBC            },
 		{ "silk",            RtpCodecMimeType::Subtype::SILK            },
+		{ "l16",             RtpCodecMimeType::Subtype::L16             },
 		// Video codecs:
 		{ "vp8",             RtpCodecMimeType::Subtype::VP8             },
 		{ "vp9",             RtpCodecMimeType::Subtype::VP9             },
@@ -57,6 +58,7 @@ namespace RTC
 		{ RtpCodecMimeType::Subtype::G722,            "G722"            },
 		{ RtpCodecMimeType::Subtype::ILBC,            "iLBC"            },
 		{ RtpCodecMimeType::Subtype::SILK,            "SILK"            },
+		{ RtpCodecMimeType::Subtype::L16,             "L16"             },
 		// Video codecs:
 		{ RtpCodecMimeType::Subtype::VP8,             "VP8"             },
 		{ RtpCodecMimeType::Subtype::VP9,             "VP9"             },
