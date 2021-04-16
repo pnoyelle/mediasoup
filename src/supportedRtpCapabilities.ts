@@ -111,6 +111,7 @@ const supportedRtpCapabilities: RtpCapabilities =
 			kind         : 'audio',
 			mimeType     : 'audio/L16',
 			clockRate    : 8000,
+			channels     : 2,
 			rtcpFeedback :
 			[
 				{ type: 'transport-cc' }
@@ -120,6 +121,7 @@ const supportedRtpCapabilities: RtpCapabilities =
 			kind         : 'audio',
 			mimeType     : 'audio/L16',
 			clockRate    : 16000,
+			channels     : 2,
 			rtcpFeedback :
 			[
 				{ type: 'transport-cc' }
@@ -129,6 +131,7 @@ const supportedRtpCapabilities: RtpCapabilities =
 			kind         : 'audio',
 			mimeType     : 'audio/L16',
 			clockRate    : 32000,
+			channels     : 2,
 			rtcpFeedback :
 			[
 				{ type: 'transport-cc' }
@@ -138,6 +141,7 @@ const supportedRtpCapabilities: RtpCapabilities =
 			kind         : 'audio',
 			mimeType     : 'audio/L16',
 			clockRate    : 48000,
+			channels     : 2,
 			rtcpFeedback :
 			[
 				{ type: 'transport-cc' }
