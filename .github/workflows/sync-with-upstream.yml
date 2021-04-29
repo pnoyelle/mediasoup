@@ -1,4 +1,4 @@
-name: Sync with upstream releases
+name: sync-with-upstream-releases
 
 on:
   workflow_dispatch:
