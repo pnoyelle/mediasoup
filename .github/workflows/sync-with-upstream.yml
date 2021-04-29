@@ -22,7 +22,7 @@ jobs:
         git fetch upstream
         git merge upstream/v3 --no-edit
         git push
-        upstream_tag=$(git ls-remote --tags --sort=-version:refname --refs upstream | head -1 | awk '{gsub("refs\/tags\/", "", $2); print $2}')
+        upstream_tag=$(git ls-remote --tags --sort=-version:refname --refs upstream | grep -v rust | head -1 | awk '{gsub("refs\/tags\/", "", $2); print $2}')
         echo "Adding tag: ${upstream_tag}-build-with-system-openssl"
         git tag -a ${upstream_tag}-build-with-system-openssl -m "${upstream_tag}-build-with-system-openssl auto release"
         git push origin --tags 2>/dev/null || echo "Tag already added"
