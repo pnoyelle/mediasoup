@@ -22,7 +22,7 @@ jobs:
         git merge upstream/v3 --no-edit
         git push
         git checkout build-with-system-openssl
-        git merge v3 --no-edit
+        git merge v3 --no-edit --allow-unrelated-histories
         git push
         upstream_tag=$(git ls-remote --tags --sort=-version:refname --refs upstream | grep -v rust | head -1 | awk '{gsub("refs\/tags\/", "", $2); print $2}')
         echo "Adding tag: ${upstream_tag}-build-with-system-openssl"
