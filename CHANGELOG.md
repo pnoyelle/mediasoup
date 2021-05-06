@@ -1,6 +1,41 @@
 # Changelog
 
 
+### 3.7.6 (WIP)
+
+* SctpAssociation: don't warn if SCTP send buffer is full.
+
+
+### 3.7.5
+
+* SctpAssociation: provide 'sctpsendbufferfull' reason on send error (#552).
+
+
+### 3.7.4
+
+* Improve `RateCalculator` (PR #547 by @vpalmisano).
+* Update NPM deps.
+
+
+### 3.7.3
+
+* Make worker M1 compilable.
+
+
+### 3.7.2
+
+* `RateCalculator` optimization (PR #538 by @vpalmisano).
+* Update `Catch` to 2.13.5.
+* Update NPM deps.
+
+
+### 3.7.1
+
+* `SimulcastConsumer`: Fix miscalculation when increasing layer (PR #541 by @penguinol).
+* Rust version with thread-based worker (PR #540).
+* Update NPM deps.
+
+
 ### 3.7.0
 
 * Welcome to `mediasoup-rust`! Authored by @nazar-pc (PRs #518 and #533).
