@@ -1,6 +1,16 @@
 # Changelog
 
 
+### 3.7.6 (WIP)
+
+* SctpAssociation: don't warn if SCTP send buffer is full.
+
+
+### 3.7.5
+
+* SctpAssociation: provide 'sctpsendbufferfull' reason on send error (#552).
+
+
 ### 3.7.4
 
 * Improve `RateCalculator` (PR #547 by @vpalmisano).
