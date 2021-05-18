@@ -26,12 +26,12 @@ jobs:
           - os: ubuntu-20.04
             cc: clang
             cxx: clang++
-          - os: macos-10.15
-            cc: gcc
-            cxx: g++
-          - os: macos-10.15
-            cc: clang
-            cxx: clang++
+          #- os: macos-10.15
+          #  cc: gcc
+          #  cxx: g++
+          #- os: macos-10.15
+          #  cc: clang
+          #  cxx: clang++
           # macOS 11 is in private preview currently.
           # - os: macos-11.0
           # Windows needs to be tuned before it can run, I didn't bother, feel
@@ -55,6 +55,9 @@ jobs:
         uses: actions/setup-node@v2
         with:
           node-version: ${{ matrix.node }}
+
+      - name: Install build deps
+        run: sudo apt-get install libssl-dev
 
       - name: Configure cache
         uses: actions/cache@v2
