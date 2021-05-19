@@ -700,6 +700,9 @@ namespace RTC
 		size_t size{ 0u }; // Full size of the packet in bytes.
 		// Codecs
 		std::unique_ptr<Codecs::PayloadDescriptorHandler> payloadDescriptorHandler;
+	
+	public:
+		void* obuParserState{ 0 };
 	};
 } // namespace RTC
 

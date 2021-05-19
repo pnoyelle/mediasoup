@@ -256,7 +256,13 @@ namespace RTC
 		// Process the packet at codec level.
 		if (packet->GetPayloadType() == GetPayloadType())
 		{
-			RTC::Codecs::Tools::ProcessRtpPacket(packet, GetMimeType());
+			auto mimeType = GetMimeType();
+			if (mimeType.type == RTC::RtpCodecMimeType::Type::VIDEO
+				&& mimeType.subtype == RTC::RtpCodecMimeType::Subtype::AV1X)
+			{
+				packet->obuParserState = (void*)&this->obuParserState;
+			}
+			RTC::Codecs::Tools::ProcessRtpPacket(packet, mimeType);
 			this->ProcessPacketDependencyDescriptor(packet);
 		}
 
@@ -379,7 +385,13 @@ namespace RTC
 		// Process the packet at codec level.
 		if (packet->GetPayloadType() == GetPayloadType())
 		{
-			RTC::Codecs::Tools::ProcessRtpPacket(packet, GetMimeType());
+			auto mimeType = GetMimeType();
+			if (mimeType.type == RTC::RtpCodecMimeType::Type::VIDEO
+				&& mimeType.subtype == RTC::RtpCodecMimeType::Subtype::AV1X)
+			{
+				packet->obuParserState = (void*)&this->obuParserState;
+			}
+			RTC::Codecs::Tools::ProcessRtpPacket(packet, mimeType);
 			this->ProcessPacketDependencyDescriptor(packet);
 		}
 

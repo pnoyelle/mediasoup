@@ -5,6 +5,11 @@
 #include "RTC/Codecs/PayloadDescriptorHandler.hpp"
 #include "RTC/RtpPacket.hpp"
 #include "RTC/SeqManager.hpp"
+extern "C"
+{
+#include <obuparse.h>
+#include <tools/json.h>
+}
 
 /*
 Ref.
@@ -115,6 +120,17 @@ namespace RTC
 				bool hasTl0PictureIndex{ false };
 				bool hasTlIndex{ false };
 			};
+
+		public:
+			struct ObuParserState
+			{ 
+				OBPSequenceHeader hdr{ 0 };
+				OBPState state{ 0 };
+				int seenSeq{ 0 };
+				uint8_t* data{ 0 };
+				size_t len;
+			};
+			static int parseObu(ObuParserState* obuParserState, PayloadDescriptor* payloadDescriptor, uint8_t* data, size_t len);
 
 		public:
 			static AV1X::PayloadDescriptor* Parse(

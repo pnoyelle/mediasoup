@@ -5,6 +5,7 @@
 #include "RTC/RTCP/XrDelaySinceLastRr.hpp"
 #include "RTC/RateCalculator.hpp"
 #include "RTC/RtpStream.hpp"
+#include "RTC/Codecs/AV1X.hpp"
 #include "handles/Timer.hpp"
 #include <vector>
 
@@ -49,6 +50,7 @@ namespace RTC
 		bool ReceivePacket(RTC::RtpPacket* packet) override;
 		bool ReceiveRtxPacket(RTC::RtpPacket* packet);
 		void ProcessPacketDependencyDescriptor(RTC::RtpPacket* packet);
+		RTC::Codecs::AV1X::ObuParserState obuParserState;
 		RTC::RTCP::ReceiverReport* GetRtcpReceiverReport();
 		RTC::RTCP::ReceiverReport* GetRtxRtcpReceiverReport();
 		void ReceiveRtcpSenderReport(RTC::RTCP::SenderReport* report);

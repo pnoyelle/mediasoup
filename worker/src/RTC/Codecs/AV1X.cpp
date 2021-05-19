@@ -32,8 +32,9 @@ namespace RTC
 			MS_TRACE();
 
 			if (len < 1)
-				return nullptr;
+				return nullptr;		
 
+			//
 			std::unique_ptr<PayloadDescriptor> payloadDescriptor(new PayloadDescriptor());
 
 			uint32_t bitOffset{ 0 };
@@ -86,14 +87,14 @@ namespace RTC
 				bitOffset += 3;
 			}
 
-			if (payloadDescriptor->obu_has_size_field)
+			/* if (payloadDescriptor->obu_has_size_field)
 			{
 				payloadDescriptor->obu_size = Utils::Bits::ReadBitsLeb128(data, len, bitOffset);
 			}
 			else
 			{
 				// payloadDescriptor->obu_size = sz - 1 - payloadDescriptor->obu_extension_flag
-			}
+			} */
 
 			/* {
 			  MS_DUMP("<av1-aggregation-header> z=%u y=%u w=%u n=%u",
@@ -117,7 +118,7 @@ namespace RTC
 			  );
 			} */
 
-			if (
+			/* if (
 			  payloadDescriptor->obu_type != OBU_SEQUENCE_HEADER &&
 			  payloadDescriptor->obu_type != OBU_TEMPORAL_DELIMITER &&
 			  payloadDescriptor->obu_extension_flag == 1)
@@ -130,7 +131,7 @@ namespace RTC
 			}
 			else if (payloadDescriptor->obu_type == OBU_FRAME_HEADER || payloadDescriptor->obu_type == OBU_REDUNDANT_FRAME_HEADER)
 			{
-			}
+			} */
 
 			return payloadDescriptor.release();
 		}
@@ -160,9 +161,133 @@ namespace RTC
 				  packet->GetTemporalLayer());
 			}
 
+			AV1X::parseObu((AV1X::ObuParserState*)packet->obuParserState, payloadDescriptor, (uint8_t*)data + 1, len - 1);
+
 			auto* payloadDescriptorHandler = new PayloadDescriptorHandler(payloadDescriptor);
 
 			packet->SetPayloadDescriptorHandler(payloadDescriptorHandler);
+		}
+
+		int AV1X::parseObu(ObuParserState* obuParserState, PayloadDescriptor* payloadDescriptor, uint8_t* data, size_t len)
+		{
+			int ret               = 0;
+			uint8_t *packet_buf = data;
+			size_t packet_size = len;
+			size_t packet_pos = 0;
+
+			OBPFrameHeader frame_hdr = {0};
+			int SeenFrameHeader = 0;
+
+			if (payloadDescriptor->z) {
+				return 0;
+			}
+			assert(payloadDescriptor->w != 0);
+
+			while (packet_pos < packet_size)
+			{
+				char err_buf[1024];
+				ptrdiff_t offset;
+				size_t obu_size;
+				int temporal_id, spatial_id;
+				OBPOBUType obu_type;
+				OBPError err = { &err_buf[0], 1024 };
+
+				ret = obp_get_next_obu(packet_buf + packet_pos, packet_size - packet_pos, 
+									&obu_type, &offset, &obu_size, &temporal_id, &spatial_id, &err);
+				if (ret < 0) {
+					MS_DEBUG_DEV("Failed to parse OBU header: %s\n", err.error);
+					return ret;
+				}
+
+				/* MS_DEBUG_DEV("{\"obu_type\": %d, \"offset\": %td, \"obu_size\": %zu, \"temporal_id\": %d, \"spatial_id\": %d}\n",
+					obu_type, offset, obu_size, temporal_id, spatial_id); */
+
+				switch (obu_type) {
+					case OBP_OBU_TEMPORAL_DELIMITER: {
+						// assert(obu_size == 0);
+						SeenFrameHeader = 0;
+						break;
+					}
+					case OBP_OBU_SEQUENCE_HEADER: {
+						obuParserState->seenSeq = 1;
+						memset(&obuParserState->hdr, 0, sizeof(OBPSequenceHeader));
+						ret = obp_parse_sequence_header(packet_buf + packet_pos + offset, obu_size, &obuParserState->hdr, &err);
+						if (ret < 0) {
+							MS_DEBUG_DEV("Failed to parse sequence header: %s\n", err.error);
+							return ret;
+						}
+						print_json_sequence_header(&obuParserState->hdr);
+						break;
+					}
+					case OBP_OBU_FRAME: {
+						OBPTileGroup tiles = { 0 };
+						memset(&frame_hdr, 0, sizeof(frame_hdr));
+						if (!obuParserState->seenSeq) {
+							// MS_DEBUG_DEV("Encountered Frame OBU before Sequence Header OBU.\n");
+							break;
+						}
+						ret = obp_parse_frame(packet_buf + packet_pos + offset, obu_size, &obuParserState->hdr, &obuParserState->state, temporal_id, spatial_id, &frame_hdr, &tiles, &SeenFrameHeader, &err);
+						if (ret < 0) {
+							MS_DEBUG_DEV("Failed to parse frame header: %s\n", err.error);
+							break;
+						}
+						print_json_frame_header(&frame_hdr);
+						print_json_tile_group(&tiles);
+						break;
+					}
+					case OBP_OBU_REDUNDANT_FRAME_HEADER:
+					case OBP_OBU_FRAME_HEADER: {
+						memset(&frame_hdr, 0, sizeof(frame_hdr));
+						if (!obuParserState->seenSeq) {
+							MS_DEBUG_DEV("Encountered Frame Header OBU before Sequence Header OBU.\n");
+							break;
+						}
+						ret = obp_parse_frame_header(packet_buf + packet_pos + offset, obu_size, &obuParserState->hdr, &obuParserState->state, temporal_id, spatial_id, &frame_hdr, &SeenFrameHeader, &err);
+						if (ret < 0) {
+							MS_DEBUG_DEV("Failed to parse frame header: %s\n", err.error);
+							break;
+						}
+						print_json_frame_header(&frame_hdr);
+						break;
+					}
+					case OBP_OBU_TILE_LIST: {
+						OBPTileList tile_list = { 0 };
+						ret = obp_parse_tile_list(packet_buf + packet_pos + offset, obu_size, &tile_list, &err);
+						if (ret < 0) {
+							MS_DEBUG_DEV("Failed to parse metadata: %s\n", err.error);
+							return ret;
+						}
+						print_json_tile_list(&tile_list);
+						break;
+					}
+					case OBP_OBU_TILE_GROUP: {
+						OBPTileGroup tiles = { 0 };
+						ret = obp_parse_tile_group(packet_buf + packet_pos + offset, obu_size, &frame_hdr, &tiles, &SeenFrameHeader, &err);
+						if (ret < 0) {
+							MS_DEBUG_DEV("Failed to parse tile group: %s\n", err.error);
+							return ret;
+						}
+						print_json_tile_group(&tiles);
+						break;
+					}
+					case OBP_OBU_METADATA: {
+						OBPMetadata meta;
+						ret = obp_parse_metadata(packet_buf + packet_pos + offset, obu_size, &meta, &err);
+						if (ret < 0) {
+							MS_DEBUG_DEV("Failed to parse metadata: %s\n", err.error);
+							return ret;
+						}
+						print_json_metadata(&meta);
+						break;
+					}
+					default:
+						break;
+				}
+
+				packet_pos += obu_size + (size_t) offset;
+			}
+			
+			return 0;
 		}
 
 		/* Instance methods. */

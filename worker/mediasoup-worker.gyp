@@ -4,6 +4,7 @@
     'dependencies':
     [
       'deps/netstring/netstring.gyp:netstring',
+      'deps/obuparse/obuparse.gyp:obuparse',
       'deps/libuv/uv.gyp:libuv',
       'deps/openssl/openssl.gyp:openssl',
       'deps/libsrtp/libsrtp.gyp:libsrtp',
@@ -308,7 +309,7 @@
       }],
 
       [ 'OS != "win"', {
-        'cflags': [ '-std=c++11', '-Wall', '-Wextra', '-Wno-unused-parameter', '-Wno-implicit-fallthrough' ]
+        'cflags': [ '-std=c++11', '-Wall', '-Wextra', '-Wno-unused-parameter', '-Wno-implicit-fallthrough', '-Wno-missing-field-initializers' ]
       }],
 
       [ 'OS == "mac"', {
