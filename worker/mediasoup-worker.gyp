@@ -26,6 +26,7 @@
       'src/DepOpenSSL.cpp',
       'src/DepUsrSCTP.cpp',
       'src/Logger.cpp',
+      'src/MediaSoupErrors.cpp',
       'src/Settings.cpp',
       'src/Worker.cpp',
       'src/Utils/Crypto.cpp',
