@@ -36,11 +36,19 @@ namespace PayloadChannel
 
 		std::free(this->writeBuffer);
 		delete this->ongoingNotification;
+
+		if (!this->closed)
+			Close();
 	}
 
 	void PayloadChannelSocket::Close()
 	{
 		MS_TRACE_STD();
+
+		if (this->closed)
+			return;
+
+		this->closed = true;
 
 		this->consumerSocket.Close();
 		this->producerSocket.Close();
@@ -57,7 +65,7 @@ namespace PayloadChannel
 	{
 		MS_TRACE();
 
-		if (this->producerSocket.IsClosed())
+		if (this->closed)
 			return;
 
 		std::string message = jsonMessage.dump();
@@ -83,7 +91,7 @@ namespace PayloadChannel
 	{
 		MS_TRACE_STD();
 
-		if (this->consumerSocket.IsClosed())
+		if (this->closed)
 			return;
 
 		std::string message = jsonMessage.dump();
@@ -224,6 +232,15 @@ namespace PayloadChannel
 	  : ::UnixStreamSocket(fd, bufferSize, ::UnixStreamSocket::Role::CONSUMER), listener(listener)
 	{
 		MS_TRACE();
+
+		this->readBuffer = static_cast<uint8_t*>(std::malloc(NsMessageMaxLen));
+	}
+
+	ConsumerSocket::~ConsumerSocket()
+	{
+		MS_TRACE();
+
+		std::free(this->readBuffer);
 	}
 
 	void ConsumerSocket::UserOnUnixStreamRead()
@@ -324,7 +341,8 @@ namespace PayloadChannel
 			readLen =
 			  reinterpret_cast<const uint8_t*>(msgStart) - (this->buffer + this->msgStart) + msgLen + 1;
 
-			this->listener->OnConsumerSocketMessage(this, msgStart, msgLen);
+			std::memcpy(this->readBuffer, msgStart, msgLen);
+			this->listener->OnConsumerSocketMessage(this, reinterpret_cast<char*>(this->readBuffer), msgLen);
 
 			// If there is no more space available in the buffer and that is because
 			// the latest parsed message filled it, then empty the full buffer.
