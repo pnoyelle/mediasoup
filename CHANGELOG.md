@@ -1,9 +1,55 @@
 # Changelog
 
 
-### 3.7.7 (WIP)
+### 3.7.15
+
+* `kind` field of `RtpHeaderExtension` is no longer optional. It must be 'audio' or 'video'.
+* Refactor API inconsistency in internal RTP Observer communication with worker.
+
+
+### 3.7.14
+
+* Update `usrsctp` to include a "possible use after free bug" fix (commit [here](https://github.com/sctplab/usrsctp/commit/0f8d58300b1fdcd943b4a9dd3fbd830825390d4d)).
+* Update NPM deps.
+
+
+### 3.7.13
+
+* Fix build on FreeBSD (PR #585 by @smortex).
+
+
+### 3.7.12
+
+* `mediasoup-worker`: Fix memory leaks on error exit (PR #581).
+* Update NPM deps.
+
+
+### 3.7.11
+
+* Fix `DepUsrSCTP::Checker::timer` not being freed on `Worker` close (PR #576). Thanks @nazar-pc for discovering this.
+* Update NPM deps.
+
+
+### 3.7.10
+
+* Remove clang tools binaries from regular installation.
+
+
+### 3.7.9
+
+* Code clean up.
+
+
+### 3.7.8
+
+* `PayloadChannel`: Copy received messages into a separate buffer to avoid memory corruption if the message is later modified (PR #570 by @aggresss).
+
+
+### 3.7.7
 
 * Thread and memory safety fixes needed for mediasoup-rust (PR #562 by @nazar-pc).
+* mediasoup-rust support on macOS (PR #567 by @nazar-pc).
+* mediasoup-rust release 0.7.2.
 * Update NPM deps.
 
 
