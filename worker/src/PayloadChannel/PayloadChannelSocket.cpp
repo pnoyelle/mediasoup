@@ -1,10 +1,10 @@
-#define MS_CLASS "PayloadChannel::UnixStreamSocket"
+#define MS_CLASS "PayloadChannel::PayloadChannelSocket"
 // #define MS_LOG_DEV_LEVEL 3
 
-#include "PayloadChannel/UnixStreamSocket.hpp"
+#include "PayloadChannel/PayloadChannelSocket.hpp"
 #include "Logger.hpp"
 #include "MediaSoupErrors.hpp"
-#include "PayloadChannel/Request.hpp"
+#include "PayloadChannel/PayloadChannelRequest.hpp"
 #include <cmath>   // std::ceil()
 #include <cstdio>  // sprintf()
 #include <cstring> // std::memcpy(), std::memmove()
@@ -22,34 +22,50 @@ namespace PayloadChannel
 	static constexpr size_t NsPayloadMaxLen{ 4194304 };
 
 	/* Instance methods. */
-	UnixStreamSocket::UnixStreamSocket(int consumerFd, int producerFd)
+	PayloadChannelSocket::PayloadChannelSocket(int consumerFd, int producerFd)
 	  : consumerSocket(consumerFd, NsMessageMaxLen, this), producerSocket(producerFd, NsMessageMaxLen)
 	{
 		MS_TRACE();
 
-		this->WriteBuffer = (uint8_t*)std::malloc(NsMessageMaxLen);
+		this->writeBuffer = (uint8_t*)std::malloc(NsMessageMaxLen);
 	}
 
-	UnixStreamSocket::~UnixStreamSocket()
+	PayloadChannelSocket::~PayloadChannelSocket()
 	{
 		MS_TRACE();
 
-		std::free(this->WriteBuffer);
+		std::free(this->writeBuffer);
 		delete this->ongoingNotification;
+
+		if (!this->closed)
+			Close();
 	}
 
-	void UnixStreamSocket::SetListener(Listener* listener)
+	void PayloadChannelSocket::Close()
+	{
+		MS_TRACE_STD();
+
+		if (this->closed)
+			return;
+
+		this->closed = true;
+
+		this->consumerSocket.Close();
+		this->producerSocket.Close();
+	}
+
+	void PayloadChannelSocket::SetListener(Listener* listener)
 	{
 		MS_TRACE();
 
 		this->listener = listener;
 	}
 
-	void UnixStreamSocket::Send(json& jsonMessage, const uint8_t* payload, size_t payloadLen)
+	void PayloadChannelSocket::Send(json& jsonMessage, const uint8_t* payload, size_t payloadLen)
 	{
 		MS_TRACE();
 
-		if (this->producerSocket.IsClosed())
+		if (this->closed)
 			return;
 
 		std::string message = jsonMessage.dump();
@@ -71,11 +87,11 @@ namespace PayloadChannel
 		SendImpl(payload, payloadLen);
 	}
 
-	void UnixStreamSocket::Send(json& jsonMessage)
+	void PayloadChannelSocket::Send(json& jsonMessage)
 	{
 		MS_TRACE_STD();
 
-		if (this->consumerSocket.IsClosed())
+		if (this->closed)
 			return;
 
 		std::string message = jsonMessage.dump();
@@ -90,7 +106,7 @@ namespace PayloadChannel
 		SendImpl(message.c_str(), message.length());
 	}
 
-	inline void UnixStreamSocket::SendImpl(const void* nsPayload, size_t nsPayloadLen)
+	inline void PayloadChannelSocket::SendImpl(const void* nsPayload, size_t nsPayloadLen)
 	{
 		MS_TRACE();
 
@@ -99,24 +115,24 @@ namespace PayloadChannel
 		if (nsPayloadLen == 0)
 		{
 			nsNumLen             = 1;
-			this->WriteBuffer[0] = '0';
-			this->WriteBuffer[1] = ':';
-			this->WriteBuffer[2] = ',';
+			this->writeBuffer[0] = '0';
+			this->writeBuffer[1] = ':';
+			this->writeBuffer[2] = ',';
 		}
 		else
 		{
 			nsNumLen = static_cast<size_t>(std::ceil(std::log10(static_cast<double>(nsPayloadLen) + 1)));
-			std::sprintf(reinterpret_cast<char*>(this->WriteBuffer), "%zu:", nsPayloadLen);
-			std::memcpy(this->WriteBuffer + nsNumLen + 1, nsPayload, nsPayloadLen);
-			this->WriteBuffer[nsNumLen + nsPayloadLen + 1] = ',';
+			std::sprintf(reinterpret_cast<char*>(this->writeBuffer), "%zu:", nsPayloadLen);
+			std::memcpy(this->writeBuffer + nsNumLen + 1, nsPayload, nsPayloadLen);
+			this->writeBuffer[nsNumLen + nsPayloadLen + 1] = ',';
 		}
 
 		size_t nsLen = nsNumLen + nsPayloadLen + 2;
 
-		this->producerSocket.Write(this->WriteBuffer, nsLen);
+		this->producerSocket.Write(this->writeBuffer, nsLen);
 	}
 
-	void UnixStreamSocket::OnConsumerSocketMessage(
+	void PayloadChannelSocket::OnConsumerSocketMessage(
 	  ConsumerSocket* /*consumerSocket*/, char* msg, size_t msgLen)
 	{
 		MS_TRACE();
@@ -124,12 +140,12 @@ namespace PayloadChannel
 		if (!this->ongoingNotification && !this->ongoingRequest)
 		{
 			json jsonData = json::parse(msg, msg + msgLen);
-			if (Request::IsRequest(jsonData))
+			if (PayloadChannelRequest::IsRequest(jsonData))
 			{
 				try
 				{
 					json jsonMessage     = json::parse(msg, msg + msgLen);
-					this->ongoingRequest = new PayloadChannel::Request(this, jsonMessage);
+					this->ongoingRequest = new PayloadChannel::PayloadChannelRequest(this, jsonMessage);
 				}
 				catch (const json::parse_error& error)
 				{
@@ -205,7 +221,7 @@ namespace PayloadChannel
 		}
 	}
 
-	void UnixStreamSocket::OnConsumerSocketClosed(ConsumerSocket* /*consumerSocket*/)
+	void PayloadChannelSocket::OnConsumerSocketClosed(ConsumerSocket* /*consumerSocket*/)
 	{
 		MS_TRACE();
 
@@ -216,6 +232,15 @@ namespace PayloadChannel
 	  : ::UnixStreamSocket(fd, bufferSize, ::UnixStreamSocket::Role::CONSUMER), listener(listener)
 	{
 		MS_TRACE();
+
+		this->readBuffer = static_cast<uint8_t*>(std::malloc(NsMessageMaxLen));
+	}
+
+	ConsumerSocket::~ConsumerSocket()
+	{
+		MS_TRACE();
+
+		std::free(this->readBuffer);
 	}
 
 	void ConsumerSocket::UserOnUnixStreamRead()
@@ -316,7 +341,8 @@ namespace PayloadChannel
 			readLen =
 			  reinterpret_cast<const uint8_t*>(msgStart) - (this->buffer + this->msgStart) + msgLen + 1;
 
-			this->listener->OnConsumerSocketMessage(this, msgStart, msgLen);
+			std::memcpy(this->readBuffer, msgStart, msgLen);
+			this->listener->OnConsumerSocketMessage(this, reinterpret_cast<char*>(this->readBuffer), msgLen);
 
 			// If there is no more space available in the buffer and that is because
 			// the latest parsed message filled it, then empty the full buffer.

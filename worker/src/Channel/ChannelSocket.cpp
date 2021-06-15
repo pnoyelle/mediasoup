@@ -1,7 +1,7 @@
-#define MS_CLASS "Channel::UnixStreamSocket"
+#define MS_CLASS "Channel::ChannelSocket"
 // #define MS_LOG_DEV_LEVEL 3
 
-#include "Channel/UnixStreamSocket.hpp"
+#include "Channel/ChannelSocket.hpp"
 #include "Logger.hpp"
 #include "MediaSoupErrors.hpp"
 #include <cmath>   // std::ceil()
@@ -21,33 +21,49 @@ namespace Channel
 	static constexpr size_t NsPayloadMaxLen{ 4194304 };
 
 	/* Instance methods. */
-	UnixStreamSocket::UnixStreamSocket(int consumerFd, int producerFd)
+	ChannelSocket::ChannelSocket(int consumerFd, int producerFd)
 	  : consumerSocket(consumerFd, NsMessageMaxLen, this), producerSocket(producerFd, NsMessageMaxLen)
 	{
 		MS_TRACE_STD();
 
-		this->WriteBuffer = static_cast<uint8_t*>(std::malloc(NsMessageMaxLen));
+		this->writeBuffer = static_cast<uint8_t*>(std::malloc(NsMessageMaxLen));
 	}
 
-	UnixStreamSocket::~UnixStreamSocket()
+	ChannelSocket::~ChannelSocket()
 	{
 		MS_TRACE_STD();
 
-		std::free(this->WriteBuffer);
+		std::free(this->writeBuffer);
+
+		if (!this->closed)
+			Close();
 	}
 
-	void UnixStreamSocket::SetListener(Listener* listener)
+	void ChannelSocket::Close()
+	{
+		MS_TRACE_STD();
+
+		if (this->closed)
+			return;
+
+		this->closed = true;
+
+		this->consumerSocket.Close();
+		this->producerSocket.Close();
+	}
+
+	void ChannelSocket::SetListener(Listener* listener)
 	{
 		MS_TRACE_STD();
 
 		this->listener = listener;
 	}
 
-	void UnixStreamSocket::Send(json& jsonMessage)
+	void ChannelSocket::Send(json& jsonMessage)
 	{
 		MS_TRACE_STD();
 
-		if (this->producerSocket.IsClosed())
+		if (this->closed)
 			return;
 
 		std::string message = jsonMessage.dump();
@@ -62,11 +78,11 @@ namespace Channel
 		SendImpl(message.c_str(), message.length());
 	}
 
-	void UnixStreamSocket::SendLog(char* message, size_t messageLen)
+	void ChannelSocket::SendLog(char* message, size_t messageLen)
 	{
 		MS_TRACE_STD();
 
-		if (this->producerSocket.IsClosed())
+		if (this->closed)
 			return;
 
 		if (messageLen > NsPayloadMaxLen)
@@ -79,7 +95,7 @@ namespace Channel
 		SendImpl(message, messageLen);
 	}
 
-	inline void UnixStreamSocket::SendImpl(const void* nsPayload, size_t nsPayloadLen)
+	inline void ChannelSocket::SendImpl(const void* nsPayload, size_t nsPayloadLen)
 	{
 		MS_TRACE_STD();
 
@@ -88,32 +104,31 @@ namespace Channel
 		if (nsPayloadLen == 0)
 		{
 			nsNumLen             = 1;
-			this->WriteBuffer[0] = '0';
-			this->WriteBuffer[1] = ':';
-			this->WriteBuffer[2] = ',';
+			this->writeBuffer[0] = '0';
+			this->writeBuffer[1] = ':';
+			this->writeBuffer[2] = ',';
 		}
 		else
 		{
 			nsNumLen = static_cast<size_t>(std::ceil(std::log10(static_cast<double>(nsPayloadLen) + 1)));
-			std::sprintf(reinterpret_cast<char*>(this->WriteBuffer), "%zu:", nsPayloadLen);
-			std::memcpy(this->WriteBuffer + nsNumLen + 1, nsPayload, nsPayloadLen);
-			this->WriteBuffer[nsNumLen + nsPayloadLen + 1] = ',';
+			std::sprintf(reinterpret_cast<char*>(this->writeBuffer), "%zu:", nsPayloadLen);
+			std::memcpy(this->writeBuffer + nsNumLen + 1, nsPayload, nsPayloadLen);
+			this->writeBuffer[nsNumLen + nsPayloadLen + 1] = ',';
 		}
 
 		size_t nsLen = nsNumLen + nsPayloadLen + 2;
 
-		this->producerSocket.Write(this->WriteBuffer, nsLen);
+		this->producerSocket.Write(this->writeBuffer, nsLen);
 	}
 
-	void UnixStreamSocket::OnConsumerSocketMessage(
-	  ConsumerSocket* /*consumerSocket*/, char* msg, size_t msgLen)
+	void ChannelSocket::OnConsumerSocketMessage(ConsumerSocket* /*consumerSocket*/, char* msg, size_t msgLen)
 	{
 		MS_TRACE_STD();
 
 		try
 		{
 			json jsonMessage = json::parse(msg, msg + msgLen);
-			auto* request    = new Channel::Request(this, jsonMessage);
+			auto* request    = new Channel::ChannelRequest(this, jsonMessage);
 
 			// Notify the listener.
 			try
@@ -142,7 +157,7 @@ namespace Channel
 		}
 	}
 
-	void UnixStreamSocket::OnConsumerSocketClosed(ConsumerSocket* /*consumerSocket*/)
+	void ChannelSocket::OnConsumerSocketClosed(ConsumerSocket* /*consumerSocket*/)
 	{
 		MS_TRACE_STD();
 

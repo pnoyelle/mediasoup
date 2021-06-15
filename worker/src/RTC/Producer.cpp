@@ -6,7 +6,7 @@
 #include "Logger.hpp"
 #include "MediaSoupErrors.hpp"
 #include "Utils.hpp"
-#include "Channel/Notifier.hpp"
+#include "Channel/ChannelNotifier.hpp"
 #include "RTC/Codecs/Tools.hpp"
 #include "RTC/RTCP/FeedbackPs.hpp"
 #include "RTC/RTCP/FeedbackRtp.hpp"
@@ -461,13 +461,13 @@ namespace RTC
 		}
 	}
 
-	void Producer::HandleRequest(Channel::Request* request)
+	void Producer::HandleRequest(Channel::ChannelRequest* request)
 	{
 		MS_TRACE();
 
 		switch (request->methodId)
 		{
-			case Channel::Request::MethodId::PRODUCER_DUMP:
+			case Channel::ChannelRequest::MethodId::PRODUCER_DUMP:
 			{
 				json data = json::object();
 
@@ -478,7 +478,7 @@ namespace RTC
 				break;
 			}
 
-			case Channel::Request::MethodId::PRODUCER_GET_STATS:
+			case Channel::ChannelRequest::MethodId::PRODUCER_GET_STATS:
 			{
 				json data = json::array();
 
@@ -489,7 +489,7 @@ namespace RTC
 				break;
 			}
 
-			case Channel::Request::MethodId::PRODUCER_PAUSE:
+			case Channel::ChannelRequest::MethodId::PRODUCER_PAUSE:
 			{
 				if (this->paused)
 				{
@@ -517,7 +517,7 @@ namespace RTC
 				break;
 			}
 
-			case Channel::Request::MethodId::PRODUCER_RESUME:
+			case Channel::ChannelRequest::MethodId::PRODUCER_RESUME:
 			{
 				if (!this->paused)
 				{
@@ -558,7 +558,7 @@ namespace RTC
 				break;
 			}
 
-			case Channel::Request::MethodId::PRODUCER_ENABLE_TRACE_EVENT:
+			case Channel::ChannelRequest::MethodId::PRODUCER_ENABLE_TRACE_EVENT:
 			{
 				auto jsonTypesIt = request->data.find("types");
 
@@ -1214,8 +1214,8 @@ namespace RTC
 
 		// Mangle RTP header extensions.
 		{
-			static uint8_t buffer[4096];
-			static std::vector<RTC::RtpPacket::GenericExtension> extensions;
+			thread_local static uint8_t buffer[4096];
+			thread_local static std::vector<RTC::RtpPacket::GenericExtension> extensions;
 
 			// This happens just once.
 			if (extensions.capacity() != 24)
@@ -1408,7 +1408,7 @@ namespace RTC
 					data["flip"]     = this->videoOrientation.flip;
 					data["rotation"] = this->videoOrientation.rotation;
 
-					Channel::Notifier::Emit(this->id, "videoorientationchange", data);
+					Channel::ChannelNotifier::Emit(this->id, "videoorientationchange", data);
 				}
 			}
 		}
@@ -1438,7 +1438,7 @@ namespace RTC
 			jsonEntry["score"] = rtpStream->GetScore();
 		}
 
-		Channel::Notifier::Emit(this->id, "score", data);
+		Channel::ChannelNotifier::Emit(this->id, "score", data);
 	}
 
 	inline void Producer::EmitTraceEventRtpAndKeyFrameTypes(RTC::RtpPacket* packet, bool isRtx) const
@@ -1458,7 +1458,7 @@ namespace RTC
 			if (isRtx)
 				data["info"]["isRtx"] = true;
 
-			Channel::Notifier::Emit(this->id, "trace", data);
+			Channel::ChannelNotifier::Emit(this->id, "trace", data);
 		}
 		else if (this->traceEventTypes.rtp)
 		{
@@ -1473,7 +1473,7 @@ namespace RTC
 			if (isRtx)
 				data["info"]["isRtx"] = true;
 
-			Channel::Notifier::Emit(this->id, "trace", data);
+			Channel::ChannelNotifier::Emit(this->id, "trace", data);
 		}
 	}
 
@@ -1491,7 +1491,7 @@ namespace RTC
 		data["direction"]    = "out";
 		data["info"]["ssrc"] = ssrc;
 
-		Channel::Notifier::Emit(this->id, "trace", data);
+		Channel::ChannelNotifier::Emit(this->id, "trace", data);
 	}
 
 	inline void Producer::EmitTraceEventFirType(uint32_t ssrc) const
@@ -1508,7 +1508,7 @@ namespace RTC
 		data["direction"]    = "out";
 		data["info"]["ssrc"] = ssrc;
 
-		Channel::Notifier::Emit(this->id, "trace", data);
+		Channel::ChannelNotifier::Emit(this->id, "trace", data);
 	}
 
 	inline void Producer::EmitTraceEventNackType() const
@@ -1525,7 +1525,7 @@ namespace RTC
 		data["direction"] = "out";
 		data["info"]      = json::object();
 
-		Channel::Notifier::Emit(this->id, "trace", data);
+		Channel::ChannelNotifier::Emit(this->id, "trace", data);
 	}
 
 	inline void Producer::OnRtpStreamScore(RTC::RtpStream* rtpStream, uint8_t score, uint8_t previousScore)

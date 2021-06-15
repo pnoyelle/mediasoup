@@ -505,6 +505,20 @@ request_response!(
     },
 );
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TransportSetMaxOutgoingBitrateData {
+    pub(crate) bitrate: u32,
+}
+
+request_response!(
+    "transport.setMaxOutgoingBitrate",
+    TransportSetMaxOutgoingBitrateRequest {
+        internal: TransportInternal,
+        data: TransportSetMaxOutgoingBitrateData,
+    },
+);
+
 request_response!(
     "transport.restartIce",
     TransportRestartIceRequest {
@@ -903,24 +917,22 @@ request_response!(
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct RtpObserverAddRemoveProducerRequestInternal {
-    pub(crate) router_id: RouterId,
-    pub(crate) rtp_observer_id: RtpObserverId,
-    // TODO: Inconsistency with the rest of the API, this field should have been in `data` field
-    //  instead, but it is in `internal` for now...
+pub(crate) struct RtpObserverAddRemoveProducerRequestData {
     pub(crate) producer_id: ProducerId,
 }
 
 request_response!(
     "rtpObserver.addProducer",
     RtpObserverAddProducerRequest {
-        internal: RtpObserverAddRemoveProducerRequestInternal,
+        internal: RtpObserverInternal,
+        data: RtpObserverAddRemoveProducerRequestData,
     },
 );
 
 request_response!(
     "rtpObserver.removeProducer",
     RtpObserverRemoveProducerRequest {
-        internal: RtpObserverAddRemoveProducerRequestInternal,
+        internal: RtpObserverInternal,
+        data: RtpObserverAddRemoveProducerRequestData,
     },
 );
