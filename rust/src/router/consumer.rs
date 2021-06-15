@@ -1,10 +1,7 @@
-//! A consumer represents an audio or video source being forwarded from a mediasoup router to an
-//! endpoint. It's created on top of a transport that defines how the media packets are carried.
-
 #[cfg(test)]
 mod tests;
 
-use crate::data_structures::{AppData, TraceEventDirection};
+use crate::data_structures::{AppData, RtpPacketTraceInfo, SsrcTraceInfo, TraceEventDirection};
 use crate::messages::{
     ConsumerCloseRequest, ConsumerDumpRequest, ConsumerEnableTraceEventData,
     ConsumerEnableTraceEventRequest, ConsumerGetStatsRequest, ConsumerInternal,
@@ -13,6 +10,7 @@ use crate::messages::{
 };
 use crate::producer::{ProducerId, ProducerStat, ProducerType};
 use crate::rtp_parameters::{MediaKind, MimeType, RtpCapabilities, RtpParameters};
+use crate::scalability_modes::ScalabilityMode;
 use crate::transport::Transport;
 use crate::uuid_based_wrapper_type;
 use crate::worker::{
@@ -21,17 +19,16 @@ use crate::worker::{
 use async_executor::Executor;
 use bytes::Bytes;
 use event_listener_primitives::{Bag, BagOnce, HandlerId};
-use log::*;
+use log::{debug, error};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::fmt;
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
 uuid_based_wrapper_type!(
-    /// Consumer identifier.
+    /// [`Consumer`] identifier.
     ConsumerId
 );
 
@@ -60,7 +57,7 @@ pub struct ConsumerScore {
     pub producer_scores: Vec<u8>,
 }
 
-/// Consumer options.
+/// [`Consumer`] options.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ConsumerOptions {
@@ -90,6 +87,7 @@ pub struct ConsumerOptions {
 
 impl ConsumerOptions {
     /// Create consumer options with given producer ID and RTP capabilities.
+    #[must_use]
     pub fn new(producer_id: ProducerId, rtp_capabilities: RtpCapabilities) -> Self {
         Self {
             producer_id,
@@ -149,7 +147,8 @@ pub struct ConsumableRtpEncoding {
     pub max_bitrate: Option<u32>,
     pub max_framerate: Option<f64>,
     pub dtx: Option<bool>,
-    pub scalability_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "ScalabilityMode::is_none")]
+    pub scalability_mode: ScalabilityMode,
     pub spatial_layers: Option<u8>,
     pub temporal_layers: Option<u8>,
     pub ksvc: Option<bool>,
@@ -261,9 +260,8 @@ pub enum ConsumerTraceEventData {
         timestamp: u64,
         /// Event direction.
         direction: TraceEventDirection,
-        // TODO: Clarify value structure
-        /// Per type specific information.
-        info: Value,
+        /// RTP packet info.
+        info: RtpPacketTraceInfo,
     },
     /// RTP video keyframe packet.
     KeyFrame {
@@ -271,9 +269,8 @@ pub enum ConsumerTraceEventData {
         timestamp: u64,
         /// Event direction.
         direction: TraceEventDirection,
-        // TODO: Clarify value structure
-        /// Per type specific information.
-        info: Value,
+        /// RTP packet info.
+        info: RtpPacketTraceInfo,
     },
     /// RTCP NACK packet.
     Nack {
@@ -281,9 +278,6 @@ pub enum ConsumerTraceEventData {
         timestamp: u64,
         /// Event direction.
         direction: TraceEventDirection,
-        // TODO: Clarify value structure
-        /// Per type specific information.
-        info: Value,
     },
     /// RTCP PLI packet.
     Pli {
@@ -291,9 +285,8 @@ pub enum ConsumerTraceEventData {
         timestamp: u64,
         /// Event direction.
         direction: TraceEventDirection,
-        // TODO: Clarify value structure
-        /// Per type specific information.
-        info: Value,
+        /// SSRC info.
+        info: SsrcTraceInfo,
     },
     /// RTCP FIR packet.
     Fir {
@@ -301,9 +294,8 @@ pub enum ConsumerTraceEventData {
         timestamp: u64,
         /// Event direction.
         direction: TraceEventDirection,
-        // TODO: Clarify value structure
-        /// Per type specific information.
-        info: Value,
+        /// SSRC info.
+        info: SsrcTraceInfo,
     },
 }
 
@@ -421,6 +413,7 @@ impl Inner {
 /// A consumer represents an audio or video source being forwarded from a mediasoup router to an
 /// endpoint. It's created on top of a transport that defines how the media packets are carried.
 #[derive(Clone)]
+#[must_use = "Consumer will be closed on drop, make sure to keep it around for as long as needed"]
 pub struct Consumer {
     inner: Arc<Inner>,
 }
@@ -456,7 +449,7 @@ impl Consumer {
         paused: bool,
         executor: Arc<Executor<'static>>,
         channel: Channel,
-        payload_channel: PayloadChannel,
+        payload_channel: &PayloadChannel,
         producer_paused: bool,
         score: ConsumerScore,
         preferred_layers: Option<ConsumerLayers>,
@@ -487,10 +480,7 @@ impl Consumer {
                     Ok(notification) => match notification {
                         Notification::ProducerClose => {
                             handlers.producer_close.call_simple();
-                            if let Some(inner) = inner_weak
-                                .lock()
-                                .as_ref()
-                                .and_then(|weak_inner| weak_inner.upgrade())
+                            if let Some(inner) = inner_weak.lock().as_ref().and_then(Weak::upgrade)
                             {
                                 inner.close(false);
                             }
@@ -567,11 +557,7 @@ impl Consumer {
             let inner_weak = Arc::clone(&inner_weak);
 
             Box::new(move || {
-                if let Some(inner) = inner_weak
-                    .lock()
-                    .as_ref()
-                    .and_then(|weak_inner| weak_inner.upgrade())
-                {
+                if let Some(inner) = inner_weak.lock().as_ref().and_then(Weak::upgrade) {
                     inner.handlers.transport_close.call_simple();
                     inner.close(false);
                 }
@@ -585,7 +571,7 @@ impl Consumer {
             rtp_parameters,
             paused,
             producer_paused,
-            priority: Mutex::new(1u8),
+            priority: Mutex::new(1_u8),
             score,
             preferred_layers: Mutex::new(preferred_layers),
             current_layers,
@@ -605,16 +591,19 @@ impl Consumer {
     }
 
     /// Consumer id.
+    #[must_use]
     pub fn id(&self) -> ConsumerId {
         self.inner.id
     }
 
     /// Associated Producer id.
+    #[must_use]
     pub fn producer_id(&self) -> ProducerId {
         self.inner.producer_id
     }
 
     /// Media kind.
+    #[must_use]
     pub fn kind(&self) -> MediaKind {
         self.inner.kind
     }
@@ -624,38 +613,45 @@ impl Consumer {
     /// Check the
     /// [RTP Parameters and Capabilities](https://mediasoup.org/documentation/v3/mediasoup/rtp-parameters-and-capabilities/)
     /// section for more details (TypeScript-oriented, but concepts apply here as well).
+    #[must_use]
     pub fn rtp_parameters(&self) -> &RtpParameters {
         &self.inner.rtp_parameters
     }
 
     /// Consumer type.
+    #[must_use]
     pub fn r#type(&self) -> ConsumerType {
         self.inner.r#type
     }
 
     /// Whether the consumer is paused. It does not take into account whether the associated
     /// producer is paused.
+    #[must_use]
     pub fn paused(&self) -> bool {
         *self.inner.paused.lock()
     }
 
     /// Whether the associate Producer is paused.
+    #[must_use]
     pub fn producer_paused(&self) -> bool {
         *self.inner.producer_paused.lock()
     }
 
     /// Consumer priority (see [`Consumer::set_priority`] method).
+    #[must_use]
     pub fn priority(&self) -> u8 {
         *self.inner.priority.lock()
     }
 
     /// The score of the RTP stream being sent, representing its transmission quality.
+    #[must_use]
     pub fn score(&self) -> ConsumerScore {
         self.inner.score.lock().clone()
     }
 
     /// Preferred spatial and temporal layers (see [`Consumer::set_preferred_layers`] method). For
     /// simulcast and SVC consumers, `None` otherwise.
+    #[must_use]
     pub fn preferred_layers(&self) -> Option<ConsumerLayers> {
         *self.inner.preferred_layers.lock()
     }
@@ -663,16 +659,19 @@ impl Consumer {
     /// Currently active spatial and temporal layers (for `Simulcast` and `SVC` consumers only).
     /// It's `None` if no layers are being sent to the consuming endpoint at this time (or if the
     /// consumer is consuming from a `Simulcast` or `SVC` producer).
+    #[must_use]
     pub fn current_layers(&self) -> Option<ConsumerLayers> {
         *self.inner.current_layers.lock()
     }
 
     /// Custom application data.
+    #[must_use]
     pub fn app_data(&self) -> &AppData {
         &self.inner.app_data
     }
 
     /// Whether the consumer is closed.
+    #[must_use]
     pub fn closed(&self) -> bool {
         self.inner.closed.load(Ordering::SeqCst)
     }
@@ -935,6 +934,7 @@ impl Consumer {
     }
 
     /// Downgrade `Consumer` to [`WeakConsumer`] instance.
+    #[must_use]
     pub fn downgrade(&self) -> WeakConsumer {
         WeakConsumer {
             inner: Arc::downgrade(&self.inner),
@@ -969,6 +969,7 @@ impl fmt::Debug for WeakConsumer {
 impl WeakConsumer {
     /// Attempts to upgrade `WeakConsumer` to [`Consumer`] if last instance of one wasn't dropped
     /// yet.
+    #[must_use]
     pub fn upgrade(&self) -> Option<Consumer> {
         let inner = self.inner.upgrade()?;
 

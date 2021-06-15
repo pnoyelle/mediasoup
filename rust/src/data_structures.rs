@@ -562,6 +562,21 @@ impl<'de> Deserialize<'de> for DtlsFingerprint {
             where
                 V: MapAccess<'de>,
             {
+                fn parse_as_bytes(input: &str, output: &mut [u8]) -> Result<(), String> {
+                    for (i, v) in output.iter_mut().enumerate() {
+                        *v = u8::from_str_radix(&input[i * 3..(i * 3) + 2], 16).map_err(
+                            |error| {
+                                format!(
+                                    "Failed to parse value {} as series of hex bytes: {}",
+                                    input, error,
+                                )
+                            },
+                        )?;
+                    }
+
+                    Ok(())
+                }
+
                 let mut algorithm = None::<Cow<'_, str>>;
                 let mut value = None::<Cow<'_, str>>;
                 while let Some(key) = map.next_key()? {
@@ -583,95 +598,80 @@ impl<'de> Deserialize<'de> for DtlsFingerprint {
                 let algorithm = algorithm.ok_or_else(|| de::Error::missing_field("algorithm"))?;
                 let value = value.ok_or_else(|| de::Error::missing_field("value"))?;
 
-                fn parse_as_bytes(input: &str, output: &mut [u8]) -> Result<(), String> {
-                    for (i, v) in output.iter_mut().enumerate() {
-                        *v = u8::from_str_radix(&input[i * 3..(i * 3) + 2], 16).map_err(
-                            |error| {
-                                format!(
-                                    "Failed to parse value {} as series of hex bytes: {}",
-                                    input, error,
-                                )
-                            },
-                        )?;
-                    }
-
-                    Ok(())
-                }
-
                 match algorithm.as_ref() {
                     "sha-1" => {
-                        if value.len() != (20 * 3 - 1) {
-                            Err(de::Error::custom(
-                                "Value doesn't have correct length for SHA-1",
-                            ))
-                        } else {
-                            let mut value_result = [0u8; 20];
+                        if value.len() == (20 * 3 - 1) {
+                            let mut value_result = [0_u8; 20];
                             parse_as_bytes(value.as_ref(), &mut value_result)
                                 .map_err(de::Error::custom)?;
 
                             Ok(DtlsFingerprint::Sha1 {
                                 value: value_result,
                             })
+                        } else {
+                            Err(de::Error::custom(
+                                "Value doesn't have correct length for SHA-1",
+                            ))
                         }
                     }
                     "sha-224" => {
-                        if value.len() != (28 * 3 - 1) {
-                            Err(de::Error::custom(
-                                "Value doesn't have correct length for SHA-224",
-                            ))
-                        } else {
-                            let mut value_result = [0u8; 28];
+                        if value.len() == (28 * 3 - 1) {
+                            let mut value_result = [0_u8; 28];
                             parse_as_bytes(value.as_ref(), &mut value_result)
                                 .map_err(de::Error::custom)?;
 
                             Ok(DtlsFingerprint::Sha224 {
                                 value: value_result,
                             })
+                        } else {
+                            Err(de::Error::custom(
+                                "Value doesn't have correct length for SHA-224",
+                            ))
                         }
                     }
                     "sha-256" => {
-                        if value.len() != (32 * 3 - 1) {
-                            Err(de::Error::custom(
-                                "Value doesn't have correct length for SHA-256",
-                            ))
-                        } else {
-                            let mut value_result = [0u8; 32];
+                        if value.len() == (32 * 3 - 1) {
+                            let mut value_result = [0_u8; 32];
                             parse_as_bytes(value.as_ref(), &mut value_result)
                                 .map_err(de::Error::custom)?;
 
                             Ok(DtlsFingerprint::Sha256 {
                                 value: value_result,
                             })
+                        } else {
+                            Err(de::Error::custom(
+                                "Value doesn't have correct length for SHA-256",
+                            ))
                         }
                     }
                     "sha-384" => {
-                        if value.len() != (48 * 3 - 1) {
-                            Err(de::Error::custom(
-                                "Value doesn't have correct length for SHA-384",
-                            ))
-                        } else {
-                            let mut value_result = [0u8; 48];
+                        if value.len() == (48 * 3 - 1) {
+                            let mut value_result = [0_u8; 48];
                             parse_as_bytes(value.as_ref(), &mut value_result)
                                 .map_err(de::Error::custom)?;
 
                             Ok(DtlsFingerprint::Sha384 {
                                 value: value_result,
                             })
+                        } else {
+                            Err(de::Error::custom(
+                                "Value doesn't have correct length for SHA-384",
+                            ))
                         }
                     }
                     "sha-512" => {
-                        if value.len() != (64 * 3 - 1) {
-                            Err(de::Error::custom(
-                                "Value doesn't have correct length for SHA-512",
-                            ))
-                        } else {
-                            let mut value_result = [0u8; 64];
+                        if value.len() == (64 * 3 - 1) {
+                            let mut value_result = [0_u8; 64];
                             parse_as_bytes(value.as_ref(), &mut value_result)
                                 .map_err(de::Error::custom)?;
 
                             Ok(DtlsFingerprint::Sha512 {
                                 value: value_result,
                             })
+                        } else {
+                            Err(de::Error::custom(
+                                "Value doesn't have correct length for SHA-512",
+                            ))
                         }
                     }
                     algorithm => Err(de::Error::unknown_variant(
@@ -749,7 +749,84 @@ impl WebRtcMessage {
             WebRtcMessage::String(string) => (51_u32, Bytes::from(string)),
             WebRtcMessage::Binary(binary) => (53_u32, binary),
             WebRtcMessage::EmptyString => (56_u32, Bytes::from_static(b" ")),
-            WebRtcMessage::EmptyBinary => (57_u32, Bytes::from(vec![0u8])),
+            WebRtcMessage::EmptyBinary => (57_u32, Bytes::from(vec![0_u8])),
         }
     }
+}
+
+/// RTP packet info in trace event.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RtpPacketTraceInfo {
+    /// RTP payload type.
+    pub payload_type: u8,
+    /// Sequence number.
+    pub sequence_number: u16,
+    /// Timestamp.
+    pub timestamp: u32,
+    /// Whether packet has marker or not.
+    pub marker: bool,
+    /// RTP stream SSRC.
+    pub ssrc: u32,
+    /// Whether packet contains a key frame.
+    pub is_key_frame: bool,
+    /// Packet size.
+    pub size: usize,
+    /// Payload size.
+    pub payload_size: usize,
+    /// The spatial layer index (from 0 to N).
+    pub spatial_layer: u8,
+    /// The temporal layer index (from 0 to N).
+    pub temporal_layer: u8,
+    /// The MID RTP extension value as defined in the BUNDLE specification
+    pub mid: Option<String>,
+    /// RTP stream RID value.
+    pub rid: Option<String>,
+    /// RTP stream RRID value.
+    pub rrid: Option<String>,
+    /// Transport-wide sequence number.
+    pub wide_sequence_number: Option<u16>,
+    /// Whether this is an RTX packet.
+    #[serde(default)]
+    pub is_rtx: bool,
+}
+
+/// SSRC info in trace event.
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+pub struct SsrcTraceInfo {
+    /// RTP stream SSRC.
+    ssrc: u32,
+}
+
+/// Bandwidth estimation type.
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+pub enum BweType {
+    /// Transport-wide Congestion Control.
+    #[serde(rename = "transport-cc")]
+    TransportCc,
+    /// Receiver Estimated Maximum Bitrate.
+    #[serde(rename = "remb")]
+    Remb,
+}
+
+/// BWE info in trace event.
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BweTraceInfo {
+    /// Bandwidth estimation type.
+    r#type: BweType,
+    /// Desired bitrate
+    desired_bitrate: u32,
+    /// Effective desired bitrate.
+    effective_desired_bitrate: u32,
+    /// Min bitrate.
+    min_bitrate: u32,
+    /// Max bitrate.
+    max_bitrate: u32,
+    /// Start bitrate.
+    start_bitrate: u32,
+    /// Max padding bitrate.
+    max_padding_bitrate: u32,
+    /// Available bitrate.
+    available_bitrate: u32,
 }
