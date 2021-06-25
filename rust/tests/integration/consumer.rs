@@ -1,8 +1,7 @@
 use async_io::Timer;
 use futures_lite::future;
 use mediasoup::consumer::{
-    ConsumableRtpEncoding, ConsumerLayers, ConsumerOptions, ConsumerScore, ConsumerStats,
-    ConsumerType,
+    ConsumableRtpEncoding, ConsumerLayers, ConsumerOptions, ConsumerScore, ConsumerType,
 };
 use mediasoup::data_structures::{AppData, TransportListenIp};
 use mediasoup::producer::ProducerOptions;
@@ -655,6 +654,59 @@ fn consume_succeeds() {
 }
 
 #[test]
+fn consumer_with_user_defined_mid() {
+    future::block_on(async move {
+        let (_worker, _router, transport_1, transport_2) = init().await;
+
+        let producer_1 = transport_1
+            .produce(audio_producer_options())
+            .await
+            .expect("Failed to produce audio");
+
+        let consumer_2_1 = transport_2
+            .consume(ConsumerOptions::new(
+                producer_1.id(),
+                consumer_device_capabilities(),
+            ))
+            .await
+            .expect("Failed to consume audio");
+        assert_eq!(
+            consumer_2_1.rtp_parameters().mid,
+            Some("0".to_string()),
+            "MID automatically assigned to sequential number"
+        );
+
+        let consumer_2_2 = transport_2
+            .consume({
+                let mut options =
+                    ConsumerOptions::new(producer_1.id(), consumer_device_capabilities());
+                options.mid = Some("custom-mid".to_owned());
+                options
+            })
+            .await
+            .expect("Failed to consume audio");
+        assert_eq!(
+            consumer_2_2.rtp_parameters().mid,
+            Some("custom-mid".to_string()),
+            "MID is assigned to user-provided value"
+        );
+
+        let consumer_2_3 = transport_2
+            .consume(ConsumerOptions::new(
+                producer_1.id(),
+                consumer_device_capabilities(),
+            ))
+            .await
+            .expect("Failed to consume audio");
+        assert_eq!(
+            consumer_2_3.rtp_parameters().mid,
+            Some("1".to_string()),
+            "MID automatically assigned to next sequential number"
+        );
+    })
+}
+
+#[test]
 fn weak() {
     future::block_on(async move {
         let (_worker, _router, transport_1, transport_2) = init().await;
@@ -1018,10 +1070,7 @@ fn get_stats_succeeds() {
                 .await
                 .expect("Audio consumer get_stats failed");
 
-            let consumer_stat = match stats {
-                ConsumerStats::JustConsumer((consumer_stat,)) => consumer_stat,
-                ConsumerStats::WithProducer((consumer_stat, _)) => consumer_stat,
-            };
+            let consumer_stat = stats.consumer_stats();
 
             assert_eq!(consumer_stat.kind, MediaKind::Audio);
             assert_eq!(
@@ -1070,10 +1119,7 @@ fn get_stats_succeeds() {
                 .await
                 .expect("Video consumer get_stats failed");
 
-            let consumer_stat = match stats {
-                ConsumerStats::JustConsumer((consumer_stat,)) => consumer_stat,
-                ConsumerStats::WithProducer((consumer_stat, _)) => consumer_stat,
-            };
+            let consumer_stat = stats.consumer_stats();
 
             assert_eq!(consumer_stat.kind, MediaKind::Video);
             assert_eq!(
