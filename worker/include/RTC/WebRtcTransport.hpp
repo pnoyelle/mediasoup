@@ -119,6 +119,14 @@ namespace RTC
 		bool connectCalled{ false }; // Whether connect() was succesfully called.
 		std::vector<RTC::IceCandidate> iceCandidates;
 		RTC::DtlsTransport::Role dtlsRole{ RTC::DtlsTransport::Role::AUTO };
+
+	public:
+		// Maps the listen ip:port with UdpSockets created with the port option.
+		static std::unordered_map<std::string, RTC::UdpSocket*> listenIpPortToUdpSocket;
+		// Maps the ICE username:password with the WebRTC transport instance.
+		static std::unordered_map<std::string, RTC::UdpSocket::Listener*> iceUserPassToTransport;
+		// Maps the remote ip:port with the WebRTC transport instance.
+		static std::unordered_map<std::string, RTC::UdpSocket::Listener*> remoteIpPortToTransport;
 	};
 } // namespace RTC
 
