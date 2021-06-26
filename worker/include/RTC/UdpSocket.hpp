@@ -28,6 +28,7 @@ namespace RTC
 		/* Pure virtual methods inherited from ::UdpSocketHandler. */
 	public:
 		void UserOnUdpDatagramReceived(const uint8_t* data, size_t len, const struct sockaddr* addr) override;
+		uint32_t transports{ 0 };
 
 	private:
 		// Passed by argument.

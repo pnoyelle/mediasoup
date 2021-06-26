@@ -213,9 +213,11 @@ namespace RTC
 					}
 					else
 					{
-						udpSocket                   = new RTC::UdpSocket(this, listenIp.ip);
-						this->udpSockets[udpSocket] = listenIp.announcedIp;
+						udpSocket = new RTC::UdpSocket(this, listenIp.ip);
 					}
+
+					this->udpSockets[udpSocket] = listenIp.announcedIp;
+					udpSocket->transports++;
 
 					if (listenIp.announcedIp.empty())
 						this->iceCandidates.emplace_back(udpSocket, icePriority);
@@ -280,7 +282,15 @@ namespace RTC
 			{
 				auto* udpSocket = kv.first;
 
-				delete udpSocket;
+				// TODO move to ~UdpSocket()
+				udpSocket->transports--;
+				if (udpSocket->transports == 0)
+				{
+					std::string ipPort =
+					  udpSocket->GetLocalIp() + ":" + std::to_string(udpSocket->GetLocalPort());
+					RTC::WebRtcTransport::listenIpPortToUdpSocket.erase(ipPort);
+					delete udpSocket;
+				}
 			}
 			this->udpSockets.clear();
 
@@ -316,7 +326,15 @@ namespace RTC
 		{
 			auto* udpSocket = kv.first;
 
-			delete udpSocket;
+			// TODO move to ~UdpSocket()
+			udpSocket->transports--;
+			if (udpSocket->transports == 0)
+			{
+				std::string ipPort =
+				  udpSocket->GetLocalIp() + ":" + std::to_string(udpSocket->GetLocalPort());
+				RTC::WebRtcTransport::listenIpPortToUdpSocket.erase(ipPort);
+				delete udpSocket;
+			}
 		}
 		this->udpSockets.clear();
 
@@ -346,14 +364,6 @@ namespace RTC
 			std::string user = iceServer->GetUsernameFragment();
 			RTC::WebRtcTransport::iceUserToTransport.erase(user);
 		}
-
-		/* for (auto iter = listenIpPortToUdpSocket.begin(); iter != listenIpPortToUdpSocket.end(); iter++)
-		{
-		  if (iter->second == this)
-		  {
-		    listenIpPortToUdpSocket.erase(iter);
-		  }
-		} */
 
 		for (auto iter = remoteIpPorts.begin(); iter != remoteIpPorts.end();)
 		{
