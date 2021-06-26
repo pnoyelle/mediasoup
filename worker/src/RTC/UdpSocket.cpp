@@ -3,6 +3,7 @@
 
 #include "RTC/UdpSocket.hpp"
 #include "Logger.hpp"
+#include "Utils.hpp"
 #include "RTC/PortManager.hpp"
 #include "RTC/StunPacket.hpp"
 #include "RTC/WebRtcTransport.hpp"
@@ -52,8 +53,11 @@ namespace RTC
 		}
 
 		// No listener set, find it from mapping.
-		std::string remoteIpPort;
-		GetIpPort(addr, remoteIpPort);
+		int family;
+		std::string ip;
+		uint16_t port;
+		Utils::IP::GetAddressInfo(addr, family, ip, port);
+		std::string remoteIpPort = ip + ":" + std::to_string(port);
 
 		RTC::UdpSocket::Listener* listener = NULL;
 
@@ -108,17 +112,6 @@ namespace RTC
 		}
 
 		delete packet;
-	}
-
-	void UdpSocket::GetIpPort(const struct sockaddr* addr, std::string& res)
-	{
-		int family = 0;
-		std::string ip;
-		uint16_t port;
-		Utils::IP::GetAddressInfo(addr, family, ip, port);
-
-		std::string id = ip + ":" + std::to_string(port);
-		res            = std::move(id);
 	}
 
 } // namespace RTC
