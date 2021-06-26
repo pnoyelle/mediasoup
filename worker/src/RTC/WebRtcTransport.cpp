@@ -21,7 +21,7 @@ namespace RTC
 	// Maps the listen ip:port with UdpSockets created with the port option.
 	std::unordered_map<std::string, RTC::UdpSocket*> RTC::WebRtcTransport::listenIpPortToUdpSocket;
 	// Maps the ICE username:password with the WebRTC transport instance.
-	std::unordered_map<std::string, RTC::UdpSocket::Listener*> RTC::WebRtcTransport::iceUserPassToTransport;
+	std::unordered_map<std::string, RTC::UdpSocket::Listener*> RTC::WebRtcTransport::iceUserToTransport;
 	// Maps the remote ip:port with the WebRTC transport instance.
 	std::unordered_map<std::string, RTC::UdpSocket::Listener*> RTC::WebRtcTransport::remoteIpPortToTransport;
 
@@ -172,13 +172,14 @@ namespace RTC
 						}
 						else
 						{
+							MS_DEBUG_DEV("creating new udp listening at %s:%d", listenIp.ip.c_str(), port);
 							udpSocket = new RTC::UdpSocket(nullptr, listenIp.ip, port);
 							RTC::WebRtcTransport::listenIpPortToUdpSocket[ipPort] = udpSocket;
 						}
 					}
 					else
 					{
-						udpSocket = new RTC::UdpSocket(this, listenIp.ip);
+						udpSocket                   = new RTC::UdpSocket(this, listenIp.ip);
 						this->udpSockets[udpSocket] = listenIp.announcedIp;
 					}
 
@@ -222,8 +223,9 @@ namespace RTC
 			  this, Utils::Crypto::GetRandomString(16), Utils::Crypto::GetRandomString(32));
 
 			// Assign the ICE username:password to the mapping.
-			std::string userPass = iceServer->GetUsernameFragment() + ":" + iceServer->GetPassword();
-			RTC::WebRtcTransport::iceUserPassToTransport[userPass] = this;
+			std::string user = iceServer->GetUsernameFragment();
+			MS_DEBUG_DEV("setting ICE user '%s' to transport", userPass.c_str());
+			RTC::WebRtcTransport::iceUserToTransport[user] = this;
 
 			// Create a DTLS transport.
 			this->dtlsTransport = new RTC::DtlsTransport(this);
@@ -237,8 +239,8 @@ namespace RTC
 
 			if (iceServer)
 			{
-				std::string userPass = iceServer->GetUsernameFragment() + ":" + iceServer->GetPassword();
-				RTC::WebRtcTransport::iceUserPassToTransport.erase(userPass);
+				std::string user = iceServer->GetUsernameFragment();
+				RTC::WebRtcTransport::iceUserToTransport.erase(user);
 			}
 
 			delete this->iceServer;
@@ -277,8 +279,8 @@ namespace RTC
 
 		if (iceServer)
 		{
-			std::string userPass = iceServer->GetUsernameFragment() + ":" + iceServer->GetPassword();
-			RTC::WebRtcTransport::iceUserPassToTransport.erase(userPass);
+			std::string user = iceServer->GetUsernameFragment();
+			RTC::WebRtcTransport::iceUserToTransport.erase(user);
 		}
 
 		delete this->iceServer;
@@ -621,14 +623,14 @@ namespace RTC
 				std::string usernameFragment = Utils::Crypto::GetRandomString(16);
 				std::string password         = Utils::Crypto::GetRandomString(32);
 
-				std::string userPass = iceServer->GetUsernameFragment() + ":" + iceServer->GetPassword();
+				std::string user = iceServer->GetUsernameFragment();
 
 				this->iceServer->SetUsernameFragment(usernameFragment);
 				this->iceServer->SetPassword(password);
 
-				std::string newUserPass = usernameFragment + ":" + password;
-				RTC::WebRtcTransport::iceUserPassToTransport.erase(userPass);
-				RTC::WebRtcTransport::iceUserPassToTransport[newUserPass] = this;
+				std::string newUser = usernameFragment;
+				RTC::WebRtcTransport::iceUserToTransport.erase(user);
+				RTC::WebRtcTransport::iceUserToTransport[newUser] = this;
 
 				MS_DEBUG_DEV(
 				  "WebRtcTransport ICE usernameFragment and password changed [id:%s]", this->id.c_str());

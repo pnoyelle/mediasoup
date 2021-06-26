@@ -4,8 +4,8 @@
 #include "RTC/UdpSocket.hpp"
 #include "Logger.hpp"
 #include "RTC/PortManager.hpp"
-#include "RTC/WebRtcTransport.hpp"
 #include "RTC/StunPacket.hpp"
+#include "RTC/WebRtcTransport.hpp"
 #include <string>
 
 namespace RTC
@@ -51,18 +51,16 @@ namespace RTC
 			return;
 		}
 
-		MS_WARN_DEV("no listener set");
-
 		// No listener set, find it from mapping.
-		std::string peer_id;
-		GetRemoteIpPort(addr, peer_id);
+		std::string remoteIpPort;
+		GetIpPort(addr, remoteIpPort);
 
 		RTC::UdpSocket::Listener* listener = NULL;
 
-		auto peer_iter = RTC::WebRtcTransport::remoteIpPortToTransport.find(peer_id);
-		if (peer_iter != RTC::WebRtcTransport::remoteIpPortToTransport.end())
+		auto transportIter = RTC::WebRtcTransport::remoteIpPortToTransport.find(remoteIpPort);
+		if (transportIter != RTC::WebRtcTransport::remoteIpPortToTransport.end())
 		{
-			listener = peer_iter->second;
+			listener = transportIter->second;
 		}
 
 		if (listener)
@@ -70,6 +68,8 @@ namespace RTC
 			listener->OnUdpSocketPacketReceived(this, data, len, addr);
 			return;
 		}
+
+		MS_WARN_DEV("no listener set for %s, parsing as STUN", remoteIpPort.c_str());
 
 		// No item found in mapping, try parsing the packet as STUN data.
 		RTC::StunPacket* packet = RTC::StunPacket::Parse(data, len);
@@ -80,10 +80,16 @@ namespace RTC
 			return;
 		}
 
-		std::string userPass = packet->GetUsername();
+		std::string username = packet->GetUsername();
+		auto size            = username.find(":");
+		if (size != std::string::npos)
+		{
+			username = username.substr(0, size);
+		}
+		MS_WARN_DEV("found '%s'", username.c_str());
 
-		auto name_iter = RTC::WebRtcTransport::iceUserPassToTransport.find(userPass);
-		if (name_iter == RTC::WebRtcTransport::iceUserPassToTransport.end())
+		transportIter = RTC::WebRtcTransport::iceUserToTransport.find(username);
+		if (transportIter == RTC::WebRtcTransport::iceUserToTransport.end())
 		{
 			// Reply 400.
 			RTC::StunPacket* response = packet->CreateErrorResponse(400);
@@ -94,17 +100,17 @@ namespace RTC
 			return;
 		}
 
-		listener = name_iter->second;
+		listener = transportIter->second;
 		if (listener)
 		{
-			RTC::WebRtcTransport::remoteIpPortToTransport[peer_id] = listener;
+			RTC::WebRtcTransport::remoteIpPortToTransport[remoteIpPort] = listener;
 			listener->OnUdpSocketPacketReceived(this, data, len, addr);
 		}
 
 		delete packet;
 	}
 
-	void UdpSocket::GetRemoteIpPort(const struct sockaddr* addr, std::string& peer_id)
+	void UdpSocket::GetIpPort(const struct sockaddr* addr, std::string& res)
 	{
 		int family = 0;
 		std::string ip;
@@ -112,7 +118,7 @@ namespace RTC
 		Utils::IP::GetAddressInfo(addr, family, ip, port);
 
 		std::string id = ip + ":" + std::to_string(port);
-		peer_id        = std::move(id);
+		res            = std::move(id);
 	}
 
 } // namespace RTC

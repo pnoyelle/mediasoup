@@ -30,7 +30,7 @@ namespace RTC
 		// Passed by argument.
 		Listener* listener{ nullptr };
 		bool fixedPort;
-		void GetRemoteIpPort(const struct sockaddr* addr, std::string& peer_id);
+		void GetIpPort(const struct sockaddr* addr, std::string& res);
 	};
 } // namespace RTC
 
