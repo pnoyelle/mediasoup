@@ -33,6 +33,40 @@ namespace RTC
 		       std::pow(2, 0) * (256 - IceComponent);
 	}
 
+	RTC::UdpSocket::Listener* RTC::WebRtcTransport::GetFromRemoteIpPort(std::string remoteIpPort)
+	{
+		MS_TRACE();
+
+		auto iter = RTC::WebRtcTransport::remoteIpPortToTransport.find(remoteIpPort);
+		if (iter != RTC::WebRtcTransport::remoteIpPortToTransport.end())
+		{
+			return iter->second;
+		}
+
+		return nullptr;
+	}
+
+	RTC::UdpSocket::Listener* RTC::WebRtcTransport::GetFromUserName(std::string userName)
+	{
+		MS_TRACE();
+
+		auto iter = RTC::WebRtcTransport::iceUserToTransport.find(userName);
+		if (iter != RTC::WebRtcTransport::iceUserToTransport.end())
+		{
+			return iter->second;
+		}
+
+		return nullptr;
+	}
+
+	void RTC::WebRtcTransport::AddRemoteIpPort(std::string remoteIpPort, RTC::UdpSocket::Listener* listener)
+	{
+		MS_TRACE();
+
+		listener->remoteIpPorts.insert(remoteIpPort);
+		RTC::WebRtcTransport::remoteIpPortToTransport[remoteIpPort] = listener;
+	}
+
 	/* Instance methods. */
 
 	WebRtcTransport::WebRtcTransport(const std::string& id, RTC::Transport::Listener* listener, json& data)
@@ -321,17 +355,10 @@ namespace RTC
 		  }
 		} */
 
-		for (auto it = RTC::WebRtcTransport::remoteIpPortToTransport.begin();
-		     it != RTC::WebRtcTransport::remoteIpPortToTransport.end();)
+		for (auto iter = remoteIpPorts.begin(); iter != remoteIpPorts.end();)
 		{
-			if (it->second == this)
-			{
-				it = RTC::WebRtcTransport::remoteIpPortToTransport.erase(it);
-			}
-			else
-			{
-				it++;
-			}
+			RTC::WebRtcTransport::remoteIpPortToTransport.erase(*iter);
+			iter = remoteIpPorts.erase(iter);
 		}
 	}
 

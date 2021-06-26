@@ -4,6 +4,7 @@
 #include "common.hpp"
 #include "handles/UdpSocketHandler.hpp"
 #include <string>
+#include <unordered_set>
 
 namespace RTC
 {
@@ -15,6 +16,8 @@ namespace RTC
 		public:
 			virtual void OnUdpSocketPacketReceived(
 			  RTC::UdpSocket* socket, const uint8_t* data, size_t len, const struct sockaddr* remoteAddr) = 0;
+
+			std::unordered_set<std::string> remoteIpPorts;
 		};
 
 	public:

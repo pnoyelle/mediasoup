@@ -122,6 +122,12 @@ namespace RTC
 
 		// Single port option mappings.
 	public:
+		static RTC::UdpSocket::Listener* GetFromRemoteIpPort(std::string remoteIpPort);
+		static RTC::UdpSocket::Listener* GetFromUserName(std::string userName);
+		// The UDP socket remote ip:port.
+		static void AddRemoteIpPort(std::string remoteIpPort, RTC::UdpSocket::Listener* listener);
+
+	private:
 		// Maps the listen ip:port with UdpSockets created with the port option.
 		static std::unordered_map<std::string, RTC::UdpSocket*> listenIpPortToUdpSocket;
 		// Maps the ICE username:password with the WebRTC transport instance.
@@ -129,7 +135,6 @@ namespace RTC
 		// Maps the remote ip:port with the WebRTC transport instance.
 		static std::unordered_map<std::string, RTC::UdpSocket::Listener*> remoteIpPortToTransport;
 
-	private:
 		void CleanupMappings();
 	};
 } // namespace RTC

@@ -59,13 +59,7 @@ namespace RTC
 		Utils::IP::GetAddressInfo(addr, family, ip, port);
 		std::string remoteIpPort = ip + ":" + std::to_string(port);
 
-		RTC::UdpSocket::Listener* listener = NULL;
-
-		auto transportIter = RTC::WebRtcTransport::remoteIpPortToTransport.find(remoteIpPort);
-		if (transportIter != RTC::WebRtcTransport::remoteIpPortToTransport.end())
-		{
-			listener = transportIter->second;
-		}
+		RTC::UdpSocket::Listener* listener = RTC::WebRtcTransport::GetFromRemoteIpPort(remoteIpPort);
 
 		if (listener)
 		{
@@ -84,16 +78,17 @@ namespace RTC
 			return;
 		}
 
-		std::string username = packet->GetUsername();
-		auto size            = username.find(":");
+		// Get transport from user name.
+		std::string userName = packet->GetUsername();
+		auto size            = userName.find(":");
 		if (size != std::string::npos)
 		{
-			username = username.substr(0, size);
+			userName = userName.substr(0, size);
 		}
-		MS_WARN_DEV("found '%s'", username.c_str());
+		MS_WARN_DEV("found '%s'", userName.c_str());
 
-		transportIter = RTC::WebRtcTransport::iceUserToTransport.find(username);
-		if (transportIter == RTC::WebRtcTransport::iceUserToTransport.end())
+		listener = RTC::WebRtcTransport::GetFromUserName(userName);
+		if (listener == nullptr)
 		{
 			// Reply 400.
 			RTC::StunPacket* response = packet->CreateErrorResponse(400);
@@ -103,11 +98,9 @@ namespace RTC
 			delete response;
 			return;
 		}
-
-		listener = transportIter->second;
-		if (listener)
+		else
 		{
-			RTC::WebRtcTransport::remoteIpPortToTransport[remoteIpPort] = listener;
+			RTC::WebRtcTransport::AddRemoteIpPort(remoteIpPort, listener);
 			listener->OnUdpSocketPacketReceived(this, data, len, addr);
 		}
 
