@@ -237,11 +237,7 @@ namespace RTC
 			delete this->dtlsTransport;
 			this->dtlsTransport = nullptr;
 
-			if (iceServer)
-			{
-				std::string user = iceServer->GetUsernameFragment();
-				RTC::WebRtcTransport::iceUserToTransport.erase(user);
-			}
+			CleanupMappings();
 
 			delete this->iceServer;
 			this->iceServer = nullptr;
@@ -277,11 +273,7 @@ namespace RTC
 		delete this->dtlsTransport;
 		this->dtlsTransport = nullptr;
 
-		if (iceServer)
-		{
-			std::string user = iceServer->GetUsernameFragment();
-			RTC::WebRtcTransport::iceUserToTransport.erase(user);
-		}
+		CleanupMappings();
 
 		delete this->iceServer;
 		this->iceServer = nullptr;
@@ -309,6 +301,38 @@ namespace RTC
 
 		delete this->srtpRecvSession;
 		this->srtpRecvSession = nullptr;
+	}
+
+	void WebRtcTransport::CleanupMappings()
+	{
+		MS_TRACE();
+
+		if (iceServer)
+		{
+			std::string user = iceServer->GetUsernameFragment();
+			RTC::WebRtcTransport::iceUserToTransport.erase(user);
+		}
+
+		/* for (auto iter = listenIpPortToUdpSocket.begin(); iter != listenIpPortToUdpSocket.end(); iter++)
+		{
+		  if (iter->second == this)
+		  {
+		    listenIpPortToUdpSocket.erase(iter);
+		  }
+		} */
+
+		for (auto it = RTC::WebRtcTransport::remoteIpPortToTransport.begin();
+		     it != RTC::WebRtcTransport::remoteIpPortToTransport.end();)
+		{
+			if (it->second == this)
+			{
+				it = RTC::WebRtcTransport::remoteIpPortToTransport.erase(it);
+			}
+			else
+			{
+				it++;
+			}
+		}
 	}
 
 	void WebRtcTransport::FillJson(json& jsonObject) const
