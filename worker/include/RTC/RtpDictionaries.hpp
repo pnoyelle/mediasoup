@@ -142,7 +142,7 @@ namespace RTC
 			SSRC_AUDIO_LEVEL       = 10,
 			VIDEO_ORIENTATION      = 11,
 			TOFFSET                = 12,
-			DEPENDENCY_DESCRIPTOR  = 13
+			DEPENDENCY_DESCRIPTOR  = 13,
 			ABS_CAPTURE_TIME       = 14,
 		};
 

@@ -115,6 +115,7 @@ common_sources = [
   'src/RTC/Codecs/H264_SVC.cpp',
   'src/RTC/Codecs/VP8.cpp',
   'src/RTC/Codecs/VP9.cpp',
+  'src/RTC/Codecs/AV1X.cpp',
   'src/RTC/Codecs/Opus.cpp',
   'src/RTC/RtpDictionaries/Media.cpp',
   'src/RTC/RtpDictionaries/Parameters.cpp',
@@ -210,6 +211,10 @@ catch2_proj = subproject(
 libwebrtc_include_directories = include_directories('include')
 subdir('deps/libwebrtc')
 
+obuparse_include_directories = include_directories('include')
+subdir('deps/obuparse')
+
+
 dependencies = [
   abseil_cpp_proj.get_variable('absl_container_dep'),
   openssl_proj.get_variable('openssl_dep'),
@@ -218,6 +223,7 @@ dependencies = [
   libsrtp2_proj.get_variable('libsrtp2_dep'),
   usrsctp_proj.get_variable('usrsctp_dep'),
   libwebrtc_dep,
+  obuparse_dep,
 ]
 
 link_whole = [
@@ -228,6 +234,7 @@ link_whole = [
   libsrtp2_proj.get_variable('libsrtp2'),
   usrsctp_proj.get_variable('usrsctp'),
   libwebrtc,
+  obuparse,
 ]
 
 if host_machine.system() == 'windows'
