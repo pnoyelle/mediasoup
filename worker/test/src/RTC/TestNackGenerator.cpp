@@ -3,10 +3,12 @@
 #include "RTC/Codecs/PayloadDescriptorHandler.hpp"
 #include "RTC/NackGenerator.hpp"
 #include "RTC/RtpPacket.hpp"
-#include <catch.hpp>
+#include <catch2/catch.hpp>
 #include <vector>
 
 using namespace RTC;
+
+static constexpr unsigned int SendNackDelay{ 0u }; // In ms.
 
 struct TestNackGeneratorInput
 {
@@ -121,7 +123,7 @@ RtpPacket* packet = RtpPacket::Parse(rtpBuffer, sizeof(rtpBuffer));
 void validate(std::vector<TestNackGeneratorInput>& inputs)
 {
 	TestNackGeneratorListener listener;
-	NackGenerator nackGenerator = NackGenerator(&listener);
+	NackGenerator nackGenerator = NackGenerator(&listener, SendNackDelay);
 
 	for (auto input : inputs)
 	{

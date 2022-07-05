@@ -1,5 +1,5 @@
 use crate::consumer::ConsumerOptions;
-use crate::data_structures::TransportListenIp;
+use crate::data_structures::ListenIp;
 use crate::producer::ProducerOptions;
 use crate::router::{Router, RouterOptions};
 use crate::rtp_parameters::{
@@ -12,6 +12,7 @@ use crate::worker::WorkerSettings;
 use crate::worker_manager::WorkerManager;
 use futures_lite::future;
 use std::env;
+use std::net::{IpAddr, Ipv4Addr};
 use std::num::{NonZeroU32, NonZeroU8};
 
 fn media_codecs() -> Vec<RtpCodecCapability> {
@@ -78,11 +79,10 @@ async fn init() -> (Router, WebRtcTransport, WebRtcTransport) {
         .await
         .expect("Failed to create router");
 
-    let transport_options =
-        WebRtcTransportOptions::new(TransportListenIps::new(TransportListenIp {
-            ip: "127.0.0.1".parse().unwrap(),
-            announced_ip: None,
-        }));
+    let transport_options = WebRtcTransportOptions::new(TransportListenIps::new(ListenIp {
+        ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        announced_ip: None,
+    }));
 
     let transport_1 = router
         .create_webrtc_transport(transport_options.clone())
@@ -95,6 +95,46 @@ async fn init() -> (Router, WebRtcTransport, WebRtcTransport) {
         .expect("Failed to create transport2");
 
     (router, transport_1, transport_2)
+}
+
+#[test]
+fn producer_close_event() {
+    future::block_on(async move {
+        let (_router, transport_1, transport_2) = init().await;
+
+        let audio_producer = transport_1
+            .produce(audio_producer_options())
+            .await
+            .expect("Failed to produce audio");
+
+        let audio_consumer = transport_2
+            .consume(ConsumerOptions::new(
+                audio_producer.id(),
+                consumer_device_capabilities(),
+            ))
+            .await
+            .expect("Failed to consume audio");
+
+        let (mut close_tx, close_rx) = async_oneshot::oneshot::<()>();
+        let _handler = audio_consumer.on_close(move || {
+            let _ = close_tx.send(());
+        });
+
+        let (mut producer_close_tx, producer_close_rx) = async_oneshot::oneshot::<()>();
+        let _handler = audio_consumer.on_producer_close(move || {
+            let _ = producer_close_tx.send(());
+        });
+
+        drop(audio_producer);
+
+        producer_close_rx
+            .await
+            .expect("Failed to receive producer_close event");
+
+        close_rx.await.expect("Failed to receive close event");
+
+        assert!(audio_consumer.closed());
+    });
 }
 
 #[test]
@@ -132,6 +172,6 @@ fn transport_close_event() {
             .expect("Failed to receive transport_close event");
         close_rx.await.expect("Failed to receive close event");
 
-        assert_eq!(audio_consumer.closed(), true);
+        assert!(audio_consumer.closed());
     });
 }

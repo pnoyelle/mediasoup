@@ -307,6 +307,14 @@ namespace RTC
 		this->mapDataConsumers.clear();
 	}
 
+	void Transport::ListenServerClosed()
+	{
+		MS_TRACE();
+
+		// Ask our parent Router to close/delete us.
+		this->listener->OnTransportListenServerClosed(this);
+	}
+
 	void Transport::FillJson(json& jsonObject) const
 	{
 		MS_TRACE();
@@ -552,6 +560,14 @@ namespace RTC
 		// Add maxIncomingBitrate.
 		if (this->maxIncomingBitrate != 0u)
 			jsonObject["maxIncomingBitrate"] = this->maxIncomingBitrate;
+
+		// Add packetLossReceived.
+		if (this->tccServer)
+			jsonObject["rtpPacketLossReceived"] = this->tccServer->GetPacketLoss();
+
+		// Add packetLossSent.
+		if (this->tccClient)
+			jsonObject["rtpPacketLossSent"] = this->tccClient->GetPacketLoss();
 	}
 
 	void Transport::HandleRequest(Channel::ChannelRequest* request)
@@ -622,19 +638,28 @@ namespace RTC
 					MS_THROW_TYPE_ERROR("missing bitrate");
 				}
 
+				uint32_t bitrate = jsonBitrateIt->get<uint32_t>();
+
+				if (bitrate < RTC::TransportCongestionControlMinOutgoingBitrate)
+				{
+					MS_THROW_TYPE_ERROR(
+					  "bitrate must be >= %" PRIu32 " bps", RTC::TransportCongestionControlMinOutgoingBitrate);
+				}
+
 				if (this->tccClient)
 				{
-					uint32_t bitrate = jsonBitrateIt->get<uint32_t>();
-
-					// NOTE: This may throw if given bitrate is less than current
-					// initialAvailableOutgoingBitrate, so don't update things before
-					// calling this method.
+					// NOTE: This may throw so don't update things before calling this
+					// method.
 					this->tccClient->SetMaxOutgoingBitrate(bitrate);
 					this->maxOutgoingBitrate = bitrate;
 
 					MS_DEBUG_TAG(bwe, "maximum outgoing bitrate set to %" PRIu32, this->maxOutgoingBitrate);
 
 					ComputeOutgoingDesiredBitrate();
+				}
+				else
+				{
+					this->maxOutgoingBitrate = bitrate;
 				}
 
 				request->Accept();
@@ -801,10 +826,12 @@ namespace RTC
 
 			case Channel::ChannelRequest::MethodId::TRANSPORT_CONSUME:
 			{
-				auto jsonProducerIdIt = request->internal.find("producerId");
+				auto jsonProducerIdIt = request->data.find("producerId");
 
-				if (jsonProducerIdIt == request->internal.end() || !jsonProducerIdIt->is_string())
-					MS_THROW_ERROR("missing internal.producerId");
+				if (jsonProducerIdIt == request->data.end() || !jsonProducerIdIt->is_string())
+				{
+					MS_THROW_TYPE_ERROR("missing producerId");
+				}
 
 				std::string producerId = jsonProducerIdIt->get<std::string>();
 				std::string consumerId;
@@ -1155,11 +1182,11 @@ namespace RTC
 					MS_THROW_ERROR("SCTP not enabled and not a direct Transport");
 				}
 
-				auto jsonDataProducerIdIt = request->internal.find("dataProducerId");
+				auto jsonDataProducerIdIt = request->data.find("dataProducerId");
 
-				if (jsonDataProducerIdIt == request->internal.end() || !jsonDataProducerIdIt->is_string())
+				if (jsonDataProducerIdIt == request->data.end() || !jsonDataProducerIdIt->is_string())
 				{
-					MS_THROW_ERROR("missing internal.dataProducerId");
+					MS_THROW_ERROR("missing dataProducerId");
 				}
 
 				std::string dataProducerId = jsonDataProducerIdIt->get<std::string>();
@@ -1475,7 +1502,7 @@ namespace RTC
 
 				if (dataConsumer->GetType() != RTC::DataConsumer::Type::SCTP)
 				{
-					MS_THROW_ERROR("invalid DataConsumer type");
+					MS_THROW_TYPE_ERROR("invalid DataConsumer type");
 				}
 
 				if (!this->sctpAssociation)
@@ -1500,7 +1527,7 @@ namespace RTC
 
 				if (dataConsumer->GetType() != RTC::DataConsumer::Type::SCTP)
 				{
-					MS_THROW_ERROR("invalid DataConsumer type");
+					MS_THROW_TYPE_ERROR("invalid DataConsumer type");
 				}
 
 				dataConsumer->HandleRequest(request);
@@ -1528,7 +1555,7 @@ namespace RTC
 
 				if (dataConsumer->GetType() != RTC::DataConsumer::Type::SCTP)
 				{
-					MS_THROW_ERROR("invalid DataConsumer type");
+					MS_THROW_TYPE_ERROR("invalid DataConsumer type");
 				}
 
 				if (!this->sctpAssociation)
@@ -1743,12 +1770,16 @@ namespace RTC
 		auto jsonProducerIdIt = internal.find("producerId");
 
 		if (jsonProducerIdIt == internal.end() || !jsonProducerIdIt->is_string())
-			MS_THROW_ERROR("missing internal.producerId");
+		{
+			MS_THROW_TYPE_ERROR("missing producerId");
+		}
 
 		producerId.assign(jsonProducerIdIt->get<std::string>());
 
 		if (this->mapProducers.find(producerId) != this->mapProducers.end())
+		{
 			MS_THROW_ERROR("a Producer with same producerId already exists");
+		}
 	}
 
 	RTC::Producer* Transport::GetProducerFromInternal(json& internal) const
@@ -1758,7 +1789,9 @@ namespace RTC
 		auto jsonProducerIdIt = internal.find("producerId");
 
 		if (jsonProducerIdIt == internal.end() || !jsonProducerIdIt->is_string())
-			MS_THROW_ERROR("missing internal.producerId");
+		{
+			MS_THROW_TYPE_ERROR("missing producerId");
+		}
 
 		auto it = this->mapProducers.find(jsonProducerIdIt->get<std::string>());
 
@@ -1777,12 +1810,16 @@ namespace RTC
 		auto jsonConsumerIdIt = internal.find("consumerId");
 
 		if (jsonConsumerIdIt == internal.end() || !jsonConsumerIdIt->is_string())
-			MS_THROW_ERROR("missing internal.consumerId");
+		{
+			MS_THROW_TYPE_ERROR("missing consumerId");
+		}
 
 		consumerId.assign(jsonConsumerIdIt->get<std::string>());
 
 		if (this->mapConsumers.find(consumerId) != this->mapConsumers.end())
+		{
 			MS_THROW_ERROR("a Consumer with same consumerId already exists");
+		}
 	}
 
 	RTC::Consumer* Transport::GetConsumerFromInternal(json& internal) const
@@ -1792,7 +1829,9 @@ namespace RTC
 		auto jsonConsumerIdIt = internal.find("consumerId");
 
 		if (jsonConsumerIdIt == internal.end() || !jsonConsumerIdIt->is_string())
-			MS_THROW_ERROR("missing internal.consumerId");
+		{
+			MS_THROW_TYPE_ERROR("missing consumerId");
+		}
 
 		auto it = this->mapConsumers.find(jsonConsumerIdIt->get<std::string>());
 
@@ -1839,12 +1878,16 @@ namespace RTC
 		auto jsonDataProducerIdIt = internal.find("dataProducerId");
 
 		if (jsonDataProducerIdIt == internal.end() || !jsonDataProducerIdIt->is_string())
-			MS_THROW_ERROR("missing internal.dataProducerId");
+		{
+			MS_THROW_TYPE_ERROR("missing dataProducerId");
+		}
 
 		dataProducerId.assign(jsonDataProducerIdIt->get<std::string>());
 
 		if (this->mapDataProducers.find(dataProducerId) != this->mapDataProducers.end())
+		{
 			MS_THROW_ERROR("a DataProducer with same dataProducerId already exists");
+		}
 	}
 
 	RTC::DataProducer* Transport::GetDataProducerFromInternal(json& internal) const
@@ -1854,7 +1897,9 @@ namespace RTC
 		auto jsonDataProducerIdIt = internal.find("dataProducerId");
 
 		if (jsonDataProducerIdIt == internal.end() || !jsonDataProducerIdIt->is_string())
-			MS_THROW_ERROR("missing internal.dataProducerId");
+		{
+			MS_THROW_TYPE_ERROR("missing dataProducerId");
+		}
 
 		auto it = this->mapDataProducers.find(jsonDataProducerIdIt->get<std::string>());
 
@@ -1873,12 +1918,16 @@ namespace RTC
 		auto jsonDataConsumerIdIt = internal.find("dataConsumerId");
 
 		if (jsonDataConsumerIdIt == internal.end() || !jsonDataConsumerIdIt->is_string())
-			MS_THROW_ERROR("missing internal.dataConsumerId");
+		{
+			MS_THROW_TYPE_ERROR("missing dataConsumerId");
+		}
 
 		dataConsumerId.assign(jsonDataConsumerIdIt->get<std::string>());
 
 		if (this->mapDataConsumers.find(dataConsumerId) != this->mapDataConsumers.end())
+		{
 			MS_THROW_ERROR("a DataConsumer with same dataConsumerId already exists");
+		}
 	}
 
 	RTC::DataConsumer* Transport::GetDataConsumerFromInternal(json& internal) const
@@ -1888,7 +1937,9 @@ namespace RTC
 		auto jsonDataConsumerIdIt = internal.find("dataConsumerId");
 
 		if (jsonDataConsumerIdIt == internal.end() || !jsonDataConsumerIdIt->is_string())
-			MS_THROW_ERROR("missing internal.dataConsumerId");
+		{
+			MS_THROW_TYPE_ERROR("missing dataConsumerId");
+		}
 
 		auto it = this->mapDataConsumers.find(jsonDataConsumerIdIt->get<std::string>());
 
@@ -1919,6 +1970,12 @@ namespace RTC
 					{
 						// Special case for the RTP probator.
 						if (report->GetSsrc() == RTC::RtpProbationSsrc)
+						{
+							continue;
+						}
+
+						// Special case for (unused) RTCP-RR from the RTX stream.
+						if (GetConsumerByRtxSsrc(report->GetSsrc()) != nullptr)
 						{
 							continue;
 						}
@@ -2256,6 +2313,20 @@ namespace RTC
 							break;
 						}
 
+						case RTC::RTCP::ExtendedReportBlock::Type::RRT:
+						{
+							auto* rrt = static_cast<RTC::RTCP::ReceiverReferenceTime*>(report);
+
+							for (auto& kv : this->mapConsumers)
+							{
+								auto* consumer = kv.second;
+
+								consumer->ReceiveRtcpXrReceiverReferenceTime(rrt);
+							}
+
+							break;
+						}
+
 						default:;
 					}
 				}
@@ -2348,6 +2419,7 @@ namespace RTC
 		if (multimapPriorityConsumer.empty())
 			return;
 
+		bool baseAllocation       = true;
 		uint32_t availableBitrate = this->tccClient->GetAvailableBitrate();
 
 		this->tccClient->RescheduleNextAvailableBitrateEvent();
@@ -2355,8 +2427,9 @@ namespace RTC
 		MS_DEBUG_DEV("before layer-by-layer iterations [availableBitrate:%" PRIu32 "]", availableBitrate);
 
 		// Redistribute the available bitrate by allowing Consumers to increase
-		// layer by layer. Take into account the priority of each Consumer to
-		// provide it with more bitrate.
+		// layer by layer. Initially try to spread the bitrate across all
+		// consumers. Then allocate the excess bitrate to Consumers starting
+		// with the highest priorty.
 		while (availableBitrate > 0u)
 		{
 			auto previousAvailableBitrate = availableBitrate;
@@ -2367,11 +2440,9 @@ namespace RTC
 				auto* consumer = it->second;
 				auto bweType   = this->tccClient->GetBweType();
 
-				// If a Consumer has priority > 1, call IncreaseLayer() more times to
-				// provide it with more available bitrate to choose its preferred layers.
-				for (uint8_t i{ 1u }; i <= priority; ++i)
+				for (uint8_t i{ 1u }; i <= (baseAllocation ? 1u : priority); ++i)
 				{
-					uint32_t usedBitrate;
+					uint32_t usedBitrate{ 0u };
 
 					switch (bweType)
 					{
@@ -2396,6 +2467,8 @@ namespace RTC
 			// If no Consumer used bitrate, exit the loop.
 			if (availableBitrate == previousAvailableBitrate)
 				break;
+
+			baseAllocation = false;
 		}
 
 		MS_DEBUG_DEV("after layer-by-layer iterations [availableBitrate:%" PRIu32 "]", availableBitrate);
@@ -2582,23 +2655,27 @@ namespace RTC
 			sentInfo.size        = packet->GetSize();
 			sentInfo.sendingAtMs = DepLibUV::GetTimeMs();
 
-			auto* cb = new onSendCallback([tccClient, &packetInfo, senderBwe, &sentInfo](bool sent) {
-				if (sent)
-				{
-					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
+			auto* cb = new onSendCallback(
+			  [tccClient, &packetInfo, senderBwe, &sentInfo](bool sent)
+			  {
+				  if (sent)
+				  {
+					  tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
 
-					sentInfo.sentAtMs = DepLibUV::GetTimeMs();
+					  sentInfo.sentAtMs = DepLibUV::GetTimeMs();
 
-					senderBwe->RtpPacketSent(sentInfo);
-				}
-			});
+					  senderBwe->RtpPacketSent(sentInfo);
+				  }
+			  });
 
 			SendRtpPacket(consumer, packet, cb);
 #else
-			const auto* cb = new onSendCallback([tccClient, &packetInfo](bool sent) {
-				if (sent)
-					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
-			});
+			const auto* cb = new onSendCallback(
+			  [tccClient, &packetInfo](bool sent)
+			  {
+				  if (sent)
+					  tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
+			  });
 
 			SendRtpPacket(consumer, packet, cb);
 #endif
@@ -2650,23 +2727,27 @@ namespace RTC
 			sentInfo.size        = packet->GetSize();
 			sentInfo.sendingAtMs = DepLibUV::GetTimeMs();
 
-			auto* cb = new onSendCallback([tccClient, &packetInfo, senderBwe, &sentInfo](bool sent) {
-				if (sent)
-				{
-					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
+			auto* cb = new onSendCallback(
+			  [tccClient, &packetInfo, senderBwe, &sentInfo](bool sent)
+			  {
+				  if (sent)
+				  {
+					  tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
 
-					sentInfo.sentAtMs = DepLibUV::GetTimeMs();
+					  sentInfo.sentAtMs = DepLibUV::GetTimeMs();
 
-					senderBwe->RtpPacketSent(sentInfo);
-				}
-			});
+					  senderBwe->RtpPacketSent(sentInfo);
+				  }
+			  });
 
 			SendRtpPacket(consumer, packet, cb);
 #else
-			const auto* cb = new onSendCallback([tccClient, &packetInfo](bool sent) {
-				if (sent)
-					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
-			});
+			const auto* cb = new onSendCallback(
+			  [tccClient, &packetInfo](bool sent)
+			  {
+				  if (sent)
+					  tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
+			  });
 
 			SendRtpPacket(consumer, packet, cb);
 #endif
@@ -2985,23 +3066,27 @@ namespace RTC
 			sentInfo.isProbation = true;
 			sentInfo.sendingAtMs = DepLibUV::GetTimeMs();
 
-			auto* cb = new onSendCallback([tccClient, &packetInfo, senderBwe, &sentInfo](bool sent) {
-				if (sent)
-				{
-					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
+			auto* cb = new onSendCallback(
+			  [tccClient, &packetInfo, senderBwe, &sentInfo](bool sent)
+			  {
+				  if (sent)
+				  {
+					  tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
 
-					sentInfo.sentAtMs = DepLibUV::GetTimeMs();
+					  sentInfo.sentAtMs = DepLibUV::GetTimeMs();
 
-					senderBwe->RtpPacketSent(sentInfo);
-				}
-			});
+					  senderBwe->RtpPacketSent(sentInfo);
+				  }
+			  });
 
 			SendRtpPacket(nullptr, packet, cb);
 #else
-			const auto* cb = new onSendCallback([tccClient, &packetInfo](bool sent) {
-				if (sent)
-					tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
-			});
+			const auto* cb = new onSendCallback(
+			  [tccClient, &packetInfo](bool sent)
+			  {
+				  if (sent)
+					  tccClient->PacketSent(packetInfo, DepLibUV::GetTimeMsInt64());
+			  });
 
 			SendRtpPacket(nullptr, packet, cb);
 #endif

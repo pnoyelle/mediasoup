@@ -16,20 +16,21 @@ pub use crate::ortc::{
     ConsumerRtpParametersError, RtpCapabilitiesError, RtpParametersError, RtpParametersMappingError,
 };
 use crate::producer::{Producer, ProducerId, ProducerOptions};
-use crate::router::{Router, RouterId};
+use crate::router::Router;
 use crate::rtp_parameters::RtpEncodingParameters;
 use crate::worker::{Channel, PayloadChannel, RequestError};
 use crate::{ortc, uuid_based_wrapper_type};
 use async_executor::Executor;
 use async_trait::async_trait;
 use event_listener_primitives::HandlerId;
+use hash_hasher::HashedMap;
 use log::{error, warn};
+use nohash_hasher::IntMap;
 use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use serde_json::Value;
 use std::fmt::Debug;
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
@@ -82,11 +83,11 @@ pub enum TransportTraceEventType {
 #[doc(hidden)]
 pub struct RtpListener {
     /// Map from Ssrc (as string) to producer ID
-    pub mid_table: HashMap<String, ProducerId>,
+    pub mid_table: HashedMap<String, ProducerId>,
     /// Map from Ssrc (as string) to producer ID
-    pub rid_table: HashMap<String, ProducerId>,
+    pub rid_table: HashedMap<String, ProducerId>,
     /// Map from Ssrc (as string) to producer ID
-    pub ssrc_table: HashMap<String, ProducerId>,
+    pub ssrc_table: HashedMap<String, ProducerId>,
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Deserialize, Serialize)]
@@ -105,7 +106,7 @@ pub struct RecvRtpHeaderExtensions {
 #[doc(hidden)]
 pub struct SctpListener {
     /// Map from stream ID (as string) to data producer ID
-    stream_id_table: HashMap<String, DataProducerId>,
+    stream_id_table: HashedMap<String, DataProducerId>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -127,15 +128,14 @@ pub(super) enum TransportType {
 /// * [`DirectTransport`](crate::direct_transport::DirectTransport)
 ///
 /// For additional methods see [`TransportGeneric`].
-#[async_trait(?Send)]
-pub trait Transport: Debug + Send + Sync + CloneTransport {
+#[async_trait]
+pub trait Transport: Debug + Send + Sync {
     /// Transport id.
     #[must_use]
     fn id(&self) -> TransportId;
 
-    /// Router id.
-    #[must_use]
-    fn router_id(&self) -> RouterId;
+    /// Router to which transport belongs.
+    fn router(&self) -> &Router;
 
     /// Custom application data.
     #[must_use]
@@ -215,31 +215,31 @@ pub trait Transport: Debug + Send + Sync + CloneTransport {
     /// Callback is called when a new producer is created.
     fn on_new_producer(
         &self,
-        callback: Box<dyn Fn(&Producer) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&Producer) + Send + Sync + 'static>,
     ) -> HandlerId;
 
     /// Callback is called when a new consumer is created.
     fn on_new_consumer(
         &self,
-        callback: Box<dyn Fn(&Consumer) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&Consumer) + Send + Sync + 'static>,
     ) -> HandlerId;
 
     /// Callback is called when a new data producer is created.
     fn on_new_data_producer(
         &self,
-        callback: Box<dyn Fn(&DataProducer) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&DataProducer) + Send + Sync + 'static>,
     ) -> HandlerId;
 
     /// Callback is called when a new data consumer is created.
     fn on_new_data_consumer(
         &self,
-        callback: Box<dyn Fn(&DataConsumer) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&DataConsumer) + Send + Sync + 'static>,
     ) -> HandlerId;
 
     /// See [`Transport::enable_trace_event()`]
     fn on_trace(
         &self,
-        callback: Box<dyn Fn(&TransportTraceEventData) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&TransportTraceEventData) + Send + Sync + 'static>,
     ) -> HandlerId;
 
     /// Callback is called when the router this transport belongs to is closed for whatever reason.
@@ -253,33 +253,8 @@ pub trait Transport: Debug + Send + Sync + CloneTransport {
     fn on_close(&self, callback: Box<dyn FnOnce() + Send + 'static>) -> HandlerId;
 }
 
-// We don't want this to be a public API, but have to use it like this to be able to still use as
-// trait object
-/// This is a private method, don't use it outside of the library
-#[doc(hidden)]
-pub trait CloneTransport {
-    /// This is a private method, don't use it outside of the library
-    #[doc(hidden)]
-    fn clone_transport(&self) -> Box<dyn Transport>;
-}
-
-impl<T> CloneTransport for T
-where
-    T: Transport + Clone + 'static,
-{
-    fn clone_transport(&self) -> Box<dyn Transport> {
-        Box::new(self.clone())
-    }
-}
-
-impl Clone for Box<dyn Transport> {
-    fn clone(&self) -> Self {
-        self.clone_transport()
-    }
-}
-
 /// Generic transport trait with methods available on all transports in addition to [`Transport`].
-#[async_trait(?Send)]
+#[async_trait]
 pub trait TransportGeneric: Transport + Clone + 'static {
     /// Dump data structure specific to each transport.
     #[doc(hidden)]
@@ -357,10 +332,8 @@ pub enum ConsumeDataError {
     Request(RequestError),
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 pub(super) trait TransportImpl: TransportGeneric {
-    fn router(&self) -> &Router;
-
     fn channel(&self) -> &Channel;
 
     fn payload_channel(&self) -> &PayloadChannel;
@@ -369,7 +342,7 @@ pub(super) trait TransportImpl: TransportGeneric {
 
     fn next_mid_for_consumers(&self) -> &AtomicUsize;
 
-    fn used_sctp_stream_ids(&self) -> &Mutex<HashMap<u16, bool>>;
+    fn used_sctp_stream_ids(&self) -> &Mutex<IntMap<u16, bool>>;
 
     fn cname_for_producers(&self) -> &Mutex<Option<String>>;
 
@@ -393,26 +366,26 @@ pub(super) trait TransportImpl: TransportGeneric {
         }
     }
 
-    async fn dump_impl(&self) -> Result<Self::Dump, RequestError> {
+    async fn dump_impl(&self) -> Result<Value, RequestError> {
         self.channel()
             .request(TransportDumpRequest {
                 internal: TransportInternal {
                     router_id: self.router().id(),
                     transport_id: self.id(),
+                    webrtc_server_id: None,
                 },
-                phantom_data: PhantomData {},
             })
             .await
     }
 
-    async fn get_stats_impl(&self) -> Result<Vec<Self::Stat>, RequestError> {
+    async fn get_stats_impl(&self) -> Result<Value, RequestError> {
         self.channel()
             .request(TransportGetStatsRequest {
                 internal: TransportInternal {
                     router_id: self.router().id(),
                     transport_id: self.id(),
+                    webrtc_server_id: None,
                 },
-                phantom_data: PhantomData {},
             })
             .await
     }
@@ -423,6 +396,7 @@ pub(super) trait TransportImpl: TransportGeneric {
                 internal: TransportInternal {
                     router_id: self.router().id(),
                     transport_id: self.id(),
+                    webrtc_server_id: None,
                 },
                 data: TransportSetMaxIncomingBitrateData { bitrate },
             })
@@ -435,6 +409,7 @@ pub(super) trait TransportImpl: TransportGeneric {
                 internal: TransportInternal {
                     router_id: self.router().id(),
                     transport_id: self.id(),
+                    webrtc_server_id: None,
                 },
                 data: TransportSetMaxOutgoingBitrateData { bitrate },
             })
@@ -450,6 +425,7 @@ pub(super) trait TransportImpl: TransportGeneric {
                 internal: TransportInternal {
                     router_id: self.router().id(),
                     transport_id: self.id(),
+                    webrtc_server_id: None,
                 },
                 data: TransportEnableTraceEventData { types },
             })
@@ -552,7 +528,7 @@ pub(super) trait TransportImpl: TransportGeneric {
             self.channel().clone(),
             self.payload_channel().clone(),
             app_data,
-            Box::new(self.clone()),
+            Arc::new(self.clone()),
             transport_type == TransportType::Direct,
         );
 
@@ -569,7 +545,9 @@ pub(super) trait TransportImpl: TransportGeneric {
             producer_id,
             rtp_capabilities,
             paused,
+            mid,
             preferred_layers,
+            ignore_dtx,
             pipe,
             app_data,
         } = consumer_options;
@@ -594,14 +572,15 @@ pub(super) trait TransportImpl: TransportGeneric {
             .map_err(ConsumeError::BadConsumerRtpParameters)?;
 
             if !pipe {
-                // We use up to 8 bytes for MID (string).
-                let next_mid_for_consumers = self
-                    .next_mid_for_consumers()
-                    .fetch_add(1, Ordering::Relaxed);
-                let mid = next_mid_for_consumers % 100_000_000;
-
                 // Set MID.
-                rtp_parameters.mid = Some(format!("{}", mid));
+                rtp_parameters.mid = mid.or_else(|| {
+                    // We use up to 8 bytes for MID (string).
+                    let next_mid_for_consumers = self
+                        .next_mid_for_consumers()
+                        .fetch_add(1, Ordering::Relaxed);
+                    let mid = next_mid_for_consumers % 100_000_000;
+                    Some(format!("{}", mid))
+                })
             }
 
             rtp_parameters
@@ -624,9 +603,9 @@ pub(super) trait TransportImpl: TransportGeneric {
                     router_id: self.router().id(),
                     transport_id: self.id(),
                     consumer_id,
-                    producer_id: producer.id(),
                 },
                 data: TransportConsumeData {
+                    producer_id: producer.id(),
                     kind: producer.kind(),
                     rtp_parameters: rtp_parameters.clone(),
                     r#type,
@@ -636,6 +615,7 @@ pub(super) trait TransportImpl: TransportGeneric {
                         .clone(),
                     paused,
                     preferred_layers,
+                    ignore_dtx,
                 },
             })
             .await
@@ -643,8 +623,7 @@ pub(super) trait TransportImpl: TransportGeneric {
 
         Ok(Consumer::new(
             consumer_id,
-            producer.id(),
-            producer.kind(),
+            producer,
             r#type,
             rtp_parameters,
             response.paused,
@@ -655,7 +634,7 @@ pub(super) trait TransportImpl: TransportGeneric {
             response.score,
             response.preferred_layers,
             app_data,
-            Box::new(self.clone()),
+            Arc::new(self.clone()),
         ))
     }
 
@@ -726,7 +705,7 @@ pub(super) trait TransportImpl: TransportGeneric {
             self.channel().clone(),
             self.payload_channel().clone(),
             app_data,
-            Box::new(self.clone()),
+            Arc::new(self.clone()),
             transport_type == TransportType::Direct,
         ))
     }
@@ -792,10 +771,10 @@ pub(super) trait TransportImpl: TransportGeneric {
                 internal: DataConsumerInternal {
                     router_id: self.router().id(),
                     transport_id: self.id(),
-                    data_producer_id: data_producer.id(),
                     data_consumer_id,
                 },
                 data: TransportConsumeDataData {
+                    data_producer_id: data_producer.id(),
                     r#type,
                     sctp_stream_parameters,
                     label: data_producer.label().clone(),
@@ -811,12 +790,12 @@ pub(super) trait TransportImpl: TransportGeneric {
             response.sctp_stream_parameters,
             response.label,
             response.protocol,
-            data_producer.id(),
+            data_producer,
             Arc::clone(self.executor()),
             self.channel().clone(),
             self.payload_channel().clone(),
             app_data,
-            Box::new(self.clone()),
+            Arc::new(self.clone()),
             transport_type == TransportType::Direct,
         );
 

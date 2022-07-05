@@ -1,16 +1,18 @@
 use async_io::Timer;
 use futures_lite::future;
+use hash_hasher::{HashedMap, HashedSet};
 use mediasoup::data_producer::{DataProducerOptions, DataProducerType};
-use mediasoup::data_structures::{AppData, TransportListenIp};
+use mediasoup::data_structures::{AppData, ListenIp};
 use mediasoup::plain_transport::{PlainTransport, PlainTransportOptions};
+use mediasoup::prelude::*;
 use mediasoup::router::{Router, RouterOptions};
 use mediasoup::sctp_parameters::SctpStreamParameters;
-use mediasoup::transport::{ProduceDataError, Transport, TransportGeneric};
+use mediasoup::transport::ProduceDataError;
 use mediasoup::webrtc_transport::{TransportListenIps, WebRtcTransport, WebRtcTransportOptions};
 use mediasoup::worker::{RequestError, Worker, WorkerSettings};
 use mediasoup::worker_manager::WorkerManager;
-use std::collections::{HashMap, HashSet};
 use std::env;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,8 +47,8 @@ async fn init() -> (Worker, Router, WebRtcTransport, PlainTransport) {
     let transport1 = router
         .create_webrtc_transport({
             let mut transport_options =
-                WebRtcTransportOptions::new(TransportListenIps::new(TransportListenIp {
-                    ip: "127.0.0.1".parse().unwrap(),
+                WebRtcTransportOptions::new(TransportListenIps::new(ListenIp {
+                    ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
                     announced_ip: None,
                 }));
 
@@ -59,8 +61,8 @@ async fn init() -> (Worker, Router, WebRtcTransport, PlainTransport) {
 
     let transport2 = router
         .create_plain_transport({
-            let mut transport_options = PlainTransportOptions::new(TransportListenIp {
-                ip: "127.0.0.1".parse().unwrap(),
+            let mut transport_options = PlainTransportOptions::new(ListenIp {
+                ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
                 announced_ip: None,
             });
 
@@ -85,7 +87,7 @@ fn transport_1_produce_data_succeeds() {
             .on_new_data_producer({
                 let new_data_producer_count = Arc::clone(&new_data_producer_count);
 
-                Box::new(move |_data_producer| {
+                Arc::new(move |_data_producer| {
                     new_data_producer_count.fetch_add(1, Ordering::SeqCst);
                 })
             })
@@ -106,13 +108,13 @@ fn transport_1_produce_data_succeeds() {
             .expect("Failed to produce data");
 
         assert_eq!(new_data_producer_count.load(Ordering::SeqCst), 1);
-        assert_eq!(data_producer1.closed(), false);
+        assert!(!data_producer1.closed());
         assert_eq!(data_producer1.r#type(), DataProducerType::Sctp);
         {
             let sctp_stream_parameters = data_producer1.sctp_stream_parameters();
             assert!(sctp_stream_parameters.is_some());
             assert_eq!(sctp_stream_parameters.unwrap().stream_id(), 666);
-            assert_eq!(sctp_stream_parameters.unwrap().ordered(), true);
+            assert!(sctp_stream_parameters.unwrap().ordered());
             assert_eq!(sctp_stream_parameters.unwrap().max_packet_life_time(), None);
             assert_eq!(sctp_stream_parameters.unwrap().max_retransmits(), None);
         }
@@ -130,11 +132,14 @@ fn transport_1_produce_data_succeeds() {
             let dump = router.dump().await.expect("Failed to dump router");
 
             assert_eq!(dump.map_data_producer_id_data_consumer_ids, {
-                let mut map = HashMap::new();
-                map.insert(data_producer1.id(), HashSet::new());
+                let mut map = HashedMap::default();
+                map.insert(data_producer1.id(), HashedSet::default());
                 map
             });
-            assert_eq!(dump.map_data_consumer_id_data_producer_id, HashMap::new());
+            assert_eq!(
+                dump.map_data_consumer_id_data_producer_id,
+                HashedMap::default()
+            );
         }
 
         {
@@ -158,7 +163,7 @@ fn transport_2_produce_data_succeeds() {
             .on_new_data_producer({
                 let new_data_producer_count = Arc::clone(&new_data_producer_count);
 
-                Box::new(move |_data_producer| {
+                Arc::new(move |_data_producer| {
                     new_data_producer_count.fetch_add(1, Ordering::SeqCst);
                 })
             })
@@ -180,13 +185,13 @@ fn transport_2_produce_data_succeeds() {
             .expect("Failed to produce data");
 
         assert_eq!(new_data_producer_count.load(Ordering::SeqCst), 1);
-        assert_eq!(data_producer2.closed(), false);
+        assert!(!data_producer2.closed());
         assert_eq!(data_producer2.r#type(), DataProducerType::Sctp);
         {
             let sctp_stream_parameters = data_producer2.sctp_stream_parameters();
             assert!(sctp_stream_parameters.is_some());
             assert_eq!(sctp_stream_parameters.unwrap().stream_id(), 777);
-            assert_eq!(sctp_stream_parameters.unwrap().ordered(), false);
+            assert!(!sctp_stream_parameters.unwrap().ordered());
             assert_eq!(sctp_stream_parameters.unwrap().max_packet_life_time(), None);
             assert_eq!(sctp_stream_parameters.unwrap().max_retransmits(), Some(3));
         }
@@ -204,11 +209,14 @@ fn transport_2_produce_data_succeeds() {
             let dump = router.dump().await.expect("Failed to dump router");
 
             assert_eq!(dump.map_data_producer_id_data_consumer_ids, {
-                let mut map = HashMap::new();
-                map.insert(data_producer2.id(), HashSet::new());
+                let mut map = HashedMap::default();
+                map.insert(data_producer2.id(), HashedSet::default());
                 map
             });
-            assert_eq!(dump.map_data_consumer_id_data_producer_id, HashMap::new());
+            assert_eq!(
+                dump.map_data_consumer_id_data_producer_id,
+                HashedMap::default()
+            );
         }
 
         {
@@ -304,7 +312,7 @@ fn dump_succeeds() {
                 let sctp_stream_parameters = dump.sctp_stream_parameters;
                 assert!(sctp_stream_parameters.is_some());
                 assert_eq!(sctp_stream_parameters.unwrap().stream_id(), 666);
-                assert_eq!(sctp_stream_parameters.unwrap().ordered(), true);
+                assert!(sctp_stream_parameters.unwrap().ordered());
                 assert_eq!(sctp_stream_parameters.unwrap().max_packet_life_time(), None);
                 assert_eq!(sctp_stream_parameters.unwrap().max_retransmits(), None);
             }
@@ -339,7 +347,7 @@ fn dump_succeeds() {
                 let sctp_stream_parameters = dump.sctp_stream_parameters;
                 assert!(sctp_stream_parameters.is_some());
                 assert_eq!(sctp_stream_parameters.unwrap().stream_id(), 777);
-                assert_eq!(sctp_stream_parameters.unwrap().ordered(), false);
+                assert!(!sctp_stream_parameters.unwrap().ordered());
                 assert_eq!(sctp_stream_parameters.unwrap().max_packet_life_time(), None);
                 assert_eq!(sctp_stream_parameters.unwrap().max_retransmits(), Some(3));
             }
@@ -446,8 +454,14 @@ fn close_event() {
         {
             let dump = router.dump().await.expect("Failed to dump router");
 
-            assert_eq!(dump.map_data_producer_id_data_consumer_ids, HashMap::new());
-            assert_eq!(dump.map_data_consumer_id_data_producer_id, HashMap::new());
+            assert_eq!(
+                dump.map_data_producer_id_data_consumer_ids,
+                HashedMap::default()
+            );
+            assert_eq!(
+                dump.map_data_consumer_id_data_producer_id,
+                HashedMap::default()
+            );
         }
 
         {

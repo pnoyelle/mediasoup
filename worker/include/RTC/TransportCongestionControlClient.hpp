@@ -13,9 +13,12 @@
 #include <libwebrtc/api/transport/network_types.h>
 #include <libwebrtc/call/rtp_transport_controller_send.h>
 #include <libwebrtc/modules/pacing/packet_router.h>
+#include <deque>
 
 namespace RTC
 {
+	constexpr uint32_t TransportCongestionControlMinOutgoingBitrate{ 30000u };
+
 	class TransportCongestionControlClient : public webrtc::PacketRouter,
 	                                         public webrtc::TargetTransferRateObserver,
 	                                         public Timer::Listener
@@ -35,6 +38,9 @@ namespace RTC
 	public:
 		class Listener
 		{
+		public:
+			virtual ~Listener() = default;
+
 		public:
 			virtual void OnTransportCongestionControlClientBitrates(
 			  RTC::TransportCongestionControlClient* tccClient,
@@ -73,10 +79,16 @@ namespace RTC
 			return this->bitrates;
 		}
 		uint32_t GetAvailableBitrate() const;
+		double GetPacketLoss() const;
 		void RescheduleNextAvailableBitrateEvent();
 
 	private:
 		void MayEmitAvailableBitrateEvent(uint32_t previousAvailableBitrate);
+		void UpdatePacketLoss(double packetLoss);
+		void ApplyBitrateUpdates();
+
+		void InitializeController();
+		void DestroyController();
 
 		// jmillan: missing.
 		// void OnRemoteNetworkEstimate(NetworkStateEstimate estimate) override;
@@ -110,6 +122,8 @@ namespace RTC
 		bool availableBitrateEventCalled{ false };
 		uint64_t lastAvailableBitrateEventAtMs{ 0u };
 		RTC::TrendCalculator desiredBitrateTrend;
+		std::deque<double> packetLossHistory;
+		double packetLoss{ 0 };
 	};
 } // namespace RTC
 

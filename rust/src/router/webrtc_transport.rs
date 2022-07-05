@@ -5,31 +5,31 @@ use crate::consumer::{Consumer, ConsumerId, ConsumerOptions};
 use crate::data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions, DataConsumerType};
 use crate::data_producer::{DataProducer, DataProducerId, DataProducerOptions, DataProducerType};
 use crate::data_structures::{
-    AppData, DtlsParameters, DtlsState, IceCandidate, IceParameters, IceRole, IceState, SctpState,
-    TransportListenIp, TransportTuple,
+    AppData, DtlsParameters, DtlsState, IceCandidate, IceParameters, IceRole, IceState, ListenIp,
+    SctpState, TransportTuple,
 };
 use crate::messages::{
-    TransportCloseRequest, TransportConnectRequestWebRtc, TransportConnectRequestWebRtcData,
+    TransportCloseRequest, TransportConnectRequestWebRtcData, TransportConnectWebRtcRequest,
     TransportInternal, TransportRestartIceRequest, WebRtcTransportData,
 };
 use crate::producer::{Producer, ProducerId, ProducerOptions};
 use crate::router::transport::{TransportImpl, TransportType};
-use crate::router::{Router, RouterId};
-
+use crate::router::Router;
 use crate::sctp_parameters::{NumSctpStreams, SctpParameters};
 use crate::transport::{
     ConsumeDataError, ConsumeError, ProduceDataError, ProduceError, RecvRtpHeaderExtensions,
     RtpListener, SctpListener, Transport, TransportGeneric, TransportId, TransportTraceEventData,
     TransportTraceEventType,
 };
+use crate::webrtc_server::WebRtcServer;
 use crate::worker::{Channel, PayloadChannel, RequestError, SubscriptionHandler};
 use async_executor::Executor;
 use async_trait::async_trait;
 use event_listener_primitives::{Bag, BagOnce, HandlerId};
 use log::{debug, error};
+use nohash_hasher::IntMap;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt;
 use std::ops::Deref;
@@ -39,25 +39,25 @@ use thiserror::Error;
 
 /// Struct that protects an invariant of having non-empty list of listen IPs
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
-pub struct TransportListenIps(Vec<TransportListenIp>);
+pub struct TransportListenIps(Vec<ListenIp>);
 
 impl TransportListenIps {
     /// Create transport listen IPs with given IP populated initially.
     #[must_use]
-    pub fn new(listen_ip: TransportListenIp) -> Self {
+    pub fn new(listen_ip: ListenIp) -> Self {
         Self(vec![listen_ip])
     }
 
     /// Insert another listen IP.
     #[must_use]
-    pub fn insert(mut self, listen_ip: TransportListenIp) -> Self {
+    pub fn insert(mut self, listen_ip: ListenIp) -> Self {
         self.0.push(listen_ip);
         self
     }
 }
 
 impl Deref for TransportListenIps {
-    type Target = Vec<TransportListenIp>;
+    type Target = Vec<ListenIp>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -69,10 +69,10 @@ impl Deref for TransportListenIps {
 #[error("Empty list of listen IPs provided, should have at least one element")]
 pub struct EmptyListError;
 
-impl TryFrom<Vec<TransportListenIp>> for TransportListenIps {
+impl TryFrom<Vec<ListenIp>> for TransportListenIps {
     type Error = EmptyListError;
 
-    fn try_from(listen_ips: Vec<TransportListenIp>) -> Result<Self, Self::Error> {
+    fn try_from(listen_ips: Vec<ListenIp>) -> Result<Self, Self::Error> {
         if listen_ips.is_empty() {
             Err(EmptyListError)
         } else {
@@ -81,20 +81,39 @@ impl TryFrom<Vec<TransportListenIp>> for TransportListenIps {
     }
 }
 
-/// [`WebRtcTransport`] options.
+/// How [`WebRtcTransport`] should listen on interfaces.
 ///
 /// # Notes on usage
 /// * Do not use "0.0.0.0" into `listen_ips`. Values in `listen_ips` must be specific bindable IPs
 ///   on the host.
 /// * If you use "0.0.0.0" or "::" into `listen_ips`, then you need to also provide `announced_ip`
 ///   in the corresponding entry in `listen_ips`.
+#[derive(Debug, Clone)]
+pub enum WebRtcTransportListen {
+    /// Listen on individual IP/port combinations specific to this transport.
+    Individual {
+        /// Listening IP address or addresses in order of preference (first one is the preferred one).
+        listen_ips: TransportListenIps,
+        /// Fixed port to listen on instead of selecting automatically from Worker's port range.
+        port: Option<u16>,
+    },
+    /// Share [`WebRtcServer`] with other transports withing the same worker.
+    Server {
+        /// [`WebRtcServer`] to use.
+        webrtc_server: WebRtcServer,
+    },
+}
+
+/// [`WebRtcTransport`] options.
+///
+/// # Notes on usage
 /// * `initial_available_outgoing_bitrate` is just applied when the consumer endpoint supports REMB
 ///   or Transport-CC.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct WebRtcTransportOptions {
-    /// Listening IP address or addresses in order of preference (first one is the preferred one).
-    pub listen_ips: TransportListenIps,
+    /// How [`WebRtcTransport`] should listen on interfaces.
+    pub listen: WebRtcTransportListen,
     /// Listen in UDP. Default true.
     pub enable_udp: bool,
     /// Listen in TCP.
@@ -129,7 +148,27 @@ impl WebRtcTransportOptions {
     #[must_use]
     pub fn new(listen_ips: TransportListenIps) -> Self {
         Self {
-            listen_ips,
+            listen: WebRtcTransportListen::Individual {
+                listen_ips,
+                port: None,
+            },
+            enable_udp: true,
+            enable_tcp: false,
+            prefer_udp: false,
+            prefer_tcp: false,
+            initial_available_outgoing_bitrate: 600_000,
+            enable_sctp: false,
+            num_sctp_streams: NumSctpStreams::default(),
+            max_sctp_message_size: 262_144,
+            sctp_send_buffer_size: 262_144,
+            app_data: AppData::default(),
+        }
+    }
+    /// Create [`WebRtcTransport`] options with given [`WebRtcServer`].
+    #[must_use]
+    pub fn new_with_server(webrtc_server: WebRtcServer) -> Self {
+        Self {
+            listen: WebRtcTransportListen::Server { webrtc_server },
             enable_udp: true,
             enable_tcp: false,
             prefer_udp: false,
@@ -154,8 +193,8 @@ pub struct WebRtcTransportDump {
     pub direct: bool,
     pub producer_ids: Vec<ProducerId>,
     pub consumer_ids: Vec<ConsumerId>,
-    pub map_ssrc_consumer_id: HashMap<u32, ConsumerId>,
-    pub map_rtx_ssrc_consumer_id: HashMap<u32, ConsumerId>,
+    pub map_ssrc_consumer_id: IntMap<u32, ConsumerId>,
+    pub map_rtx_ssrc_consumer_id: IntMap<u32, ConsumerId>,
     pub data_producer_ids: Vec<DataProducerId>,
     pub data_consumer_ids: Vec<DataConsumerId>,
     pub recv_rtp_header_extensions: RecvRtpHeaderExtensions,
@@ -206,6 +245,10 @@ pub struct WebRtcTransportStat {
     pub available_incoming_bitrate: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_incoming_bitrate: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rtp_packet_loss_received: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rtp_packet_loss_sent: Option<f64>,
     // WebRtcTransport specific.
     pub ice_role: IceRole,
     pub ice_state: IceState,
@@ -224,16 +267,17 @@ pub struct WebRtcTransportRemoteParameters {
 
 #[derive(Default)]
 struct Handlers {
-    new_producer: Bag<Box<dyn Fn(&Producer) + Send + Sync>>,
-    new_consumer: Bag<Box<dyn Fn(&Consumer) + Send + Sync>>,
-    new_data_producer: Bag<Box<dyn Fn(&DataProducer) + Send + Sync>>,
-    new_data_consumer: Bag<Box<dyn Fn(&DataConsumer) + Send + Sync>>,
-    ice_state_change: Bag<Box<dyn Fn(IceState) + Send + Sync>>,
-    ice_selected_tuple_change: Bag<Box<dyn Fn(&TransportTuple) + Send + Sync>>,
-    dtls_state_change: Bag<Box<dyn Fn(DtlsState) + Send + Sync>>,
-    sctp_state_change: Bag<Box<dyn Fn(SctpState) + Send + Sync>>,
-    trace: Bag<Box<dyn Fn(&TransportTraceEventData) + Send + Sync>>,
+    new_producer: Bag<Arc<dyn Fn(&Producer) + Send + Sync>, Producer>,
+    new_consumer: Bag<Arc<dyn Fn(&Consumer) + Send + Sync>, Consumer>,
+    new_data_producer: Bag<Arc<dyn Fn(&DataProducer) + Send + Sync>, DataProducer>,
+    new_data_consumer: Bag<Arc<dyn Fn(&DataConsumer) + Send + Sync>, DataConsumer>,
+    ice_state_change: Bag<Arc<dyn Fn(IceState) + Send + Sync>>,
+    ice_selected_tuple_change: Bag<Arc<dyn Fn(&TransportTuple) + Send + Sync>, TransportTuple>,
+    dtls_state_change: Bag<Arc<dyn Fn(DtlsState) + Send + Sync>>,
+    sctp_state_change: Bag<Arc<dyn Fn(SctpState) + Send + Sync>>,
+    trace: Bag<Arc<dyn Fn(&TransportTraceEventData) + Send + Sync>, TransportTraceEventData>,
     router_close: BagOnce<Box<dyn FnOnce() + Send>>,
+    webrtc_server_close: BagOnce<Box<dyn FnOnce() + Send>>,
     close: BagOnce<Box<dyn FnOnce() + Send>>,
 }
 
@@ -263,7 +307,7 @@ enum Notification {
 struct Inner {
     id: TransportId,
     next_mid_for_consumers: AtomicUsize,
-    used_sctp_stream_ids: Mutex<HashMap<u16, bool>>,
+    used_sctp_stream_ids: Mutex<IntMap<u16, bool>>,
     cname_for_producers: Mutex<Option<String>>,
     executor: Arc<Executor<'static>>,
     channel: Channel,
@@ -271,11 +315,14 @@ struct Inner {
     handlers: Arc<Handlers>,
     data: Arc<WebRtcTransportData>,
     app_data: AppData,
+    // Make sure WebRTC server is not dropped until this transport is not dropped
+    webrtc_server: Option<WebRtcServer>,
     // Make sure router is not dropped until this transport is not dropped
     router: Router,
     closed: AtomicBool,
     // Drop subscription to transport-specific notifications when transport itself is dropped
-    _subscription_handler: Option<SubscriptionHandler>,
+    _subscription_handler: Mutex<Option<SubscriptionHandler>>,
+    _on_webrtc_server_close_handler: Mutex<Option<HandlerId>>,
     _on_router_close_handler: Mutex<HandlerId>,
 }
 
@@ -300,16 +347,15 @@ impl Inner {
                     internal: TransportInternal {
                         router_id: self.router.id(),
                         transport_id: self.id,
+                        webrtc_server_id: None,
                     },
                 };
-                let router = self.router.clone();
+
                 self.executor
                     .spawn(async move {
                         if let Err(error) = channel.request(request).await {
                             error!("transport closing failed on drop: {}", error);
                         }
-
-                        drop(router);
                     })
                     .detach();
             }
@@ -346,14 +392,14 @@ impl fmt::Debug for WebRtcTransport {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl Transport for WebRtcTransport {
     fn id(&self) -> TransportId {
         self.inner.id
     }
 
-    fn router_id(&self) -> RouterId {
-        self.inner.router.id()
+    fn router(&self) -> &Router {
+        &self.inner.router
     }
 
     fn app_data(&self) -> &AppData {
@@ -371,9 +417,7 @@ impl Transport for WebRtcTransport {
             .produce_impl(producer_options, TransportType::WebRtc)
             .await?;
 
-        self.inner.handlers.new_producer.call(|callback| {
-            callback(&producer);
-        });
+        self.inner.handlers.new_producer.call_simple(&producer);
 
         Ok(producer)
     }
@@ -385,9 +429,7 @@ impl Transport for WebRtcTransport {
             .consume_impl(consumer_options, TransportType::WebRtc, false)
             .await?;
 
-        self.inner.handlers.new_consumer.call(|callback| {
-            callback(&consumer);
-        });
+        self.inner.handlers.new_consumer.call_simple(&consumer);
 
         Ok(consumer)
     }
@@ -406,9 +448,10 @@ impl Transport for WebRtcTransport {
             )
             .await?;
 
-        self.inner.handlers.new_data_producer.call(|callback| {
-            callback(&data_producer);
-        });
+        self.inner
+            .handlers
+            .new_data_producer
+            .call_simple(&data_producer);
 
         Ok(data_producer)
     }
@@ -427,9 +470,10 @@ impl Transport for WebRtcTransport {
             )
             .await?;
 
-        self.inner.handlers.new_data_consumer.call(|callback| {
-            callback(&data_consumer);
-        });
+        self.inner
+            .handlers
+            .new_data_consumer
+            .call_simple(&data_consumer);
 
         Ok(data_consumer)
     }
@@ -445,35 +489,35 @@ impl Transport for WebRtcTransport {
 
     fn on_new_producer(
         &self,
-        callback: Box<dyn Fn(&Producer) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&Producer) + Send + Sync + 'static>,
     ) -> HandlerId {
         self.inner.handlers.new_producer.add(callback)
     }
 
     fn on_new_consumer(
         &self,
-        callback: Box<dyn Fn(&Consumer) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&Consumer) + Send + Sync + 'static>,
     ) -> HandlerId {
         self.inner.handlers.new_consumer.add(callback)
     }
 
     fn on_new_data_producer(
         &self,
-        callback: Box<dyn Fn(&DataProducer) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&DataProducer) + Send + Sync + 'static>,
     ) -> HandlerId {
         self.inner.handlers.new_data_producer.add(callback)
     }
 
     fn on_new_data_consumer(
         &self,
-        callback: Box<dyn Fn(&DataConsumer) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&DataConsumer) + Send + Sync + 'static>,
     ) -> HandlerId {
         self.inner.handlers.new_data_consumer.add(callback)
     }
 
     fn on_trace(
         &self,
-        callback: Box<dyn Fn(&TransportTraceEventData) + Send + Sync + 'static>,
+        callback: Arc<dyn Fn(&TransportTraceEventData) + Send + Sync + 'static>,
     ) -> HandlerId {
         self.inner.handlers.trace.add(callback)
     }
@@ -491,7 +535,7 @@ impl Transport for WebRtcTransport {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl TransportGeneric for WebRtcTransport {
     type Dump = WebRtcTransportDump;
     type Stat = WebRtcTransportStat;
@@ -500,21 +544,25 @@ impl TransportGeneric for WebRtcTransport {
     async fn dump(&self) -> Result<Self::Dump, RequestError> {
         debug!("dump()");
 
-        self.dump_impl().await
+        serde_json::from_value(self.dump_impl().await?).map_err(|error| {
+            RequestError::FailedToParse {
+                error: error.to_string(),
+            }
+        })
     }
 
     async fn get_stats(&self) -> Result<Vec<Self::Stat>, RequestError> {
         debug!("get_stats()");
 
-        self.get_stats_impl().await
+        serde_json::from_value(self.get_stats_impl().await?).map_err(|error| {
+            RequestError::FailedToParse {
+                error: error.to_string(),
+            }
+        })
     }
 }
 
 impl TransportImpl for WebRtcTransport {
-    fn router(&self) -> &Router {
-        &self.inner.router
-    }
-
     fn channel(&self) -> &Channel {
         &self.inner.channel
     }
@@ -531,7 +579,7 @@ impl TransportImpl for WebRtcTransport {
         &self.inner.next_mid_for_consumers
     }
 
-    fn used_sctp_stream_ids(&self) -> &Mutex<HashMap<u16, bool>> {
+    fn used_sctp_stream_ids(&self) -> &Mutex<IntMap<u16, bool>> {
         &self.inner.used_sctp_stream_ids
     }
 
@@ -541,6 +589,7 @@ impl TransportImpl for WebRtcTransport {
 }
 
 impl WebRtcTransport {
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn new(
         id: TransportId,
         executor: Arc<Executor<'static>>,
@@ -549,6 +598,7 @@ impl WebRtcTransport {
         data: WebRtcTransportData,
         app_data: AppData,
         router: Router,
+        webrtc_server: Option<WebRtcServer>,
     ) -> Self {
         debug!("new()");
 
@@ -560,7 +610,7 @@ impl WebRtcTransport {
             let data = Arc::clone(&data);
 
             channel.subscribe_to_notifications(id.into(), move |notification| {
-                match serde_json::from_value::<Notification>(notification) {
+                match serde_json::from_slice::<Notification>(notification) {
                     Ok(notification) => match notification {
                         Notification::IceStateChange { ice_state } => {
                             *data.ice_state.lock() = ice_state;
@@ -570,9 +620,9 @@ impl WebRtcTransport {
                         }
                         Notification::IceSelectedTupleChange { ice_selected_tuple } => {
                             data.ice_selected_tuple.lock().replace(ice_selected_tuple);
-                            handlers.ice_selected_tuple_change.call(|callback| {
-                                callback(&ice_selected_tuple);
-                            });
+                            handlers
+                                .ice_selected_tuple_change
+                                .call_simple(&ice_selected_tuple);
                         }
                         Notification::DtlsStateChange {
                             dtls_state,
@@ -596,9 +646,7 @@ impl WebRtcTransport {
                             });
                         }
                         Notification::Trace(trace_event_data) => {
-                            handlers.trace.call(|callback| {
-                                callback(&trace_event_data);
-                            });
+                            handlers.trace.call_simple(&trace_event_data);
                         }
                     },
                     Err(error) => {
@@ -610,7 +658,7 @@ impl WebRtcTransport {
 
         let next_mid_for_consumers = AtomicUsize::default();
         let used_sctp_stream_ids = Mutex::new({
-            let mut used_used_sctp_stream_ids = HashMap::new();
+            let mut used_used_sctp_stream_ids = IntMap::default();
             if let Some(sctp_parameters) = &data.sctp_parameters {
                 for i in 0..sctp_parameters.mis {
                     used_used_sctp_stream_ids.insert(i, false);
@@ -620,11 +668,25 @@ impl WebRtcTransport {
         });
         let cname_for_producers = Mutex::new(None);
         let inner_weak = Arc::<Mutex<Option<Weak<Inner>>>>::default();
+        let on_webrtc_server_close_handler = webrtc_server.as_ref().map(|webrtc_server| {
+            webrtc_server.on_close({
+                let inner_weak = Arc::clone(&inner_weak);
+
+                move || {
+                    let maybe_inner = inner_weak.lock().as_ref().and_then(Weak::upgrade);
+                    if let Some(inner) = maybe_inner {
+                        inner.handlers.webrtc_server_close.call_simple();
+                        inner.close(true);
+                    }
+                }
+            })
+        });
         let on_router_close_handler = router.on_close({
             let inner_weak = Arc::clone(&inner_weak);
 
             move || {
-                if let Some(inner) = inner_weak.lock().as_ref().and_then(Weak::upgrade) {
+                let maybe_inner = inner_weak.lock().as_ref().and_then(Weak::upgrade);
+                if let Some(inner) = maybe_inner {
                     inner.handlers.router_close.call_simple();
                     inner.close(false);
                 }
@@ -641,15 +703,24 @@ impl WebRtcTransport {
             handlers,
             data,
             app_data,
+            webrtc_server,
             router,
             closed: AtomicBool::new(false),
-            _subscription_handler: subscription_handler,
+            _subscription_handler: Mutex::new(subscription_handler),
+            _on_webrtc_server_close_handler: Mutex::new(on_webrtc_server_close_handler),
             _on_router_close_handler: Mutex::new(on_router_close_handler),
         });
 
         inner_weak.lock().replace(Arc::downgrade(&inner));
 
-        Self { inner }
+        let webrtc_transport = Self { inner };
+
+        // Notify WebRTC server that new transport was created.
+        if let Some(webrtc_server) = &webrtc_transport.inner.webrtc_server {
+            webrtc_server.notify_new_webrtc_transport(&webrtc_transport);
+        }
+
+        webrtc_transport
     }
 
     /// Provide the [`WebRtcTransport`] with remote parameters.
@@ -691,7 +762,7 @@ impl WebRtcTransport {
         let response = self
             .inner
             .channel
-            .request(TransportConnectRequestWebRtc {
+            .request(TransportConnectWebRtcRequest {
                 internal: self.get_internal(),
                 data: TransportConnectRequestWebRtcData {
                     dtls_parameters: remote_parameters.dtls_parameters,
@@ -702,6 +773,11 @@ impl WebRtcTransport {
         self.inner.data.dtls_parameters.lock().role = response.dtls_local_role;
 
         Ok(())
+    }
+
+    /// WebRTC server used during creation of this transport.
+    pub fn webrtc_server(&self) -> &Option<WebRtcServer> {
+        &self.inner.webrtc_server
     }
 
     /// Set maximum incoming bitrate for media streams sent by the remote endpoint over this
@@ -801,12 +877,23 @@ impl WebRtcTransport {
         Ok(response.ice_parameters)
     }
 
+    /// Callback is called when the WebRTC server used during creation of this transport is closed
+    /// for whatever reason.
+    /// The transport itself is also closed. `on_transport_close` callbacks are also called on all
+    /// its producers and consumers.
+    pub fn on_webrtc_server_close(
+        &self,
+        callback: Box<dyn FnOnce() + Send + 'static>,
+    ) -> HandlerId {
+        self.inner.handlers.webrtc_server_close.add(callback)
+    }
+
     /// Callback is called when the transport ICE state changes.
     pub fn on_ice_state_change<F: Fn(IceState) + Send + Sync + 'static>(
         &self,
         callback: F,
     ) -> HandlerId {
-        self.inner.handlers.ice_state_change.add(Box::new(callback))
+        self.inner.handlers.ice_state_change.add(Arc::new(callback))
     }
 
     /// Callback is called after ICE state becomes `Completed` and when the ICE selected tuple
@@ -818,7 +905,7 @@ impl WebRtcTransport {
         self.inner
             .handlers
             .ice_selected_tuple_change
-            .add(Box::new(callback))
+            .add(Arc::new(callback))
     }
 
     /// Callback is called when the transport DTLS state changes.
@@ -829,7 +916,7 @@ impl WebRtcTransport {
         self.inner
             .handlers
             .dtls_state_change
-            .add(Box::new(callback))
+            .add(Arc::new(callback))
     }
 
     /// Callback is called when the transport SCTP state changes.
@@ -840,7 +927,7 @@ impl WebRtcTransport {
         self.inner
             .handlers
             .sctp_state_change
-            .add(Box::new(callback))
+            .add(Arc::new(callback))
     }
 
     /// Downgrade `WebRtcTransport` to [`WeakWebRtcTransport`] instance.
@@ -855,6 +942,7 @@ impl WebRtcTransport {
         TransportInternal {
             router_id: self.router().id(),
             transport_id: self.id(),
+            webrtc_server_id: None,
         }
     }
 }

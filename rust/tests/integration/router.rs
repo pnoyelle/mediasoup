@@ -1,4 +1,5 @@
 use futures_lite::future;
+use hash_hasher::{HashedMap, HashedSet};
 use mediasoup::data_structures::AppData;
 use mediasoup::router::RouterOptions;
 use mediasoup::rtp_parameters::{
@@ -6,7 +7,6 @@ use mediasoup::rtp_parameters::{
 };
 use mediasoup::worker::{Worker, WorkerSettings};
 use mediasoup::worker_manager::WorkerManager;
-use std::collections::{HashMap, HashSet};
 use std::env;
 use std::num::{NonZeroU32, NonZeroU8};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -97,22 +97,33 @@ fn create_router_succeeds() {
             .expect("Failed to create router");
 
         assert_eq!(new_router_count.load(Ordering::SeqCst), 1);
-        assert_eq!(router.closed(), false);
+        assert!(!router.closed());
         assert_eq!(
             router.app_data().downcast_ref::<CustomAppData>(),
             Some(&CustomAppData { foo: 123 }),
         );
 
+        let worker_dump = worker.dump().await.expect("Failed to dump worker");
+
+        assert_eq!(worker_dump.router_ids, vec![router.id()]);
+        assert_eq!(worker_dump.webrtc_server_ids, vec![]);
+
         let dump = router.dump().await.expect("Failed to dump router");
 
         assert_eq!(dump.id, router.id());
-        assert_eq!(dump.transport_ids, HashSet::new());
-        assert_eq!(dump.rtp_observer_ids, HashSet::new());
-        assert_eq!(dump.map_producer_id_consumer_ids, HashMap::new());
-        assert_eq!(dump.map_consumer_id_producer_id, HashMap::new());
-        assert_eq!(dump.map_producer_id_observer_ids, HashMap::new());
-        assert_eq!(dump.map_data_producer_id_data_consumer_ids, HashMap::new());
-        assert_eq!(dump.map_data_consumer_id_data_producer_id, HashMap::new());
+        assert_eq!(dump.transport_ids, HashedSet::default());
+        assert_eq!(dump.rtp_observer_ids, HashedSet::default());
+        assert_eq!(dump.map_producer_id_consumer_ids, HashedMap::default());
+        assert_eq!(dump.map_consumer_id_producer_id, HashedMap::default());
+        assert_eq!(dump.map_producer_id_observer_ids, HashedMap::default());
+        assert_eq!(
+            dump.map_data_producer_id_data_consumer_ids,
+            HashedMap::default()
+        );
+        assert_eq!(
+            dump.map_data_consumer_id_data_producer_id,
+            HashedMap::default()
+        );
     });
 }
 

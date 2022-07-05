@@ -37,7 +37,7 @@ Worker::Worker(::Channel::ChannelSocket* channel, PayloadChannel::PayloadChannel
 	DepUsrSCTP::CreateChecker();
 
 	// Tell the Node process that we are running.
-	Channel::ChannelNotifier::Emit(std::to_string(Logger::pid), "running");
+	Channel::ChannelNotifier::Emit(Logger::pid, "running");
 
 	MS_DEBUG_DEV("starting libuv loop");
 	DepLibUV::RunLoop();
@@ -73,6 +73,15 @@ void Worker::Close()
 	}
 	this->mapRouters.clear();
 
+	// Delete all WebRtcServers.
+	for (auto& kv : this->mapWebRtcServers)
+	{
+		auto* webRtcServer = kv.second;
+
+		delete webRtcServer;
+	}
+	this->mapWebRtcServers.clear();
+
 	// Close the Checker instance in DepUsrSCTP.
 	DepUsrSCTP::CloseChecker();
 
@@ -89,6 +98,17 @@ void Worker::FillJson(json& jsonObject) const
 
 	// Add pid.
 	jsonObject["pid"] = Logger::pid;
+
+	// Add webRtcServerIds.
+	jsonObject["webRtcServerIds"] = json::array();
+	auto jsonWebRtcServerIdsIt    = jsonObject.find("webRtcServerIds");
+
+	for (auto& kv : this->mapWebRtcServers)
+	{
+		auto& WebRtcServerId = kv.first;
+
+		jsonWebRtcServerIdsIt->emplace_back(WebRtcServerId);
+	}
 
 	// Add routerIds.
 	jsonObject["routerIds"] = json::array();
@@ -163,6 +183,40 @@ void Worker::FillJsonResourceUsage(json& jsonObject) const
 
 	// Add ru_nivcsw (uint64_t, involuntary context switches).
 	jsonObject["ru_nivcsw"] = uvRusage.ru_nivcsw;
+}
+
+void Worker::SetNewWebRtcServerIdFromInternal(json& internal, std::string& webRtcServerId) const
+{
+	MS_TRACE();
+
+	auto jsonWebRtcServerIdIt = internal.find("webRtcServerId");
+
+	if (jsonWebRtcServerIdIt == internal.end() || !jsonWebRtcServerIdIt->is_string())
+		MS_THROW_ERROR("missing internal.webRtcServerId");
+
+	webRtcServerId.assign(jsonWebRtcServerIdIt->get<std::string>());
+
+	if (this->mapWebRtcServers.find(webRtcServerId) != this->mapWebRtcServers.end())
+		MS_THROW_ERROR("a WebRtcServer with same webRtcServerId already exists");
+}
+
+RTC::WebRtcServer* Worker::GetWebRtcServerFromInternal(json& internal) const
+{
+	MS_TRACE();
+
+	auto jsonWebRtcServerIdIt = internal.find("webRtcServerId");
+
+	if (jsonWebRtcServerIdIt == internal.end() || !jsonWebRtcServerIdIt->is_string())
+		MS_THROW_ERROR("missing internal.webRtcServerId");
+
+	auto it = this->mapWebRtcServers.find(jsonWebRtcServerIdIt->get<std::string>());
+
+	if (it == this->mapWebRtcServers.end())
+		MS_THROW_ERROR("WebRtcServer not found");
+
+	RTC::WebRtcServer* webRtcServer = it->second;
+
+	return webRtcServer;
 }
 
 void Worker::SetNewRouterIdFromInternal(json& internal, std::string& routerId) const
@@ -249,14 +303,90 @@ inline void Worker::OnChannelRequest(Channel::ChannelSocket* /*channel*/, Channe
 			break;
 		}
 
+		case Channel::ChannelRequest::MethodId::WORKER_CREATE_WEBRTC_SERVER:
+		{
+			try
+			{
+				std::string webRtcServerId;
+
+				SetNewWebRtcServerIdFromInternal(request->internal, webRtcServerId);
+
+				auto* webRtcServer = new RTC::WebRtcServer(webRtcServerId, request->data);
+
+				this->mapWebRtcServers[webRtcServerId] = webRtcServer;
+
+				MS_DEBUG_DEV("WebRtcServer created [webRtcServerId:%s]", webRtcServerId.c_str());
+
+				request->Accept();
+			}
+			catch (const MediaSoupTypeError& error)
+			{
+				MS_THROW_TYPE_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+			}
+			catch (const MediaSoupError& error)
+			{
+				MS_THROW_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+			}
+
+			break;
+		}
+
+		case Channel::ChannelRequest::MethodId::WEBRTC_SERVER_CLOSE:
+		{
+			RTC::WebRtcServer* webRtcServer{ nullptr };
+
+			try
+			{
+				webRtcServer = GetWebRtcServerFromInternal(request->internal);
+			}
+			catch (const MediaSoupError& error)
+			{
+				MS_THROW_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+			}
+
+			// Remove it from the map and delete it.
+			this->mapWebRtcServers.erase(webRtcServer->id);
+			delete webRtcServer;
+
+			MS_DEBUG_DEV("WebRtcServer closed [id:%s]", webRtcServer->id.c_str());
+
+			request->Accept();
+
+			break;
+		}
+
+		case Channel::ChannelRequest::MethodId::WEBRTC_SERVER_DUMP:
+		{
+			RTC::WebRtcServer* webRtcServer{ nullptr };
+
+			try
+			{
+				webRtcServer = GetWebRtcServerFromInternal(request->internal);
+
+				webRtcServer->HandleRequest(request);
+			}
+			catch (const MediaSoupError& error)
+			{
+				MS_THROW_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+			}
+
+			break;
+		}
+
 		case Channel::ChannelRequest::MethodId::WORKER_CREATE_ROUTER:
 		{
 			std::string routerId;
 
-			// This may throw.
-			SetNewRouterIdFromInternal(request->internal, routerId);
+			try
+			{
+				SetNewRouterIdFromInternal(request->internal, routerId);
+			}
+			catch (const MediaSoupError& error)
+			{
+				MS_THROW_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+			}
 
-			auto* router = new RTC::Router(routerId);
+			auto* router = new RTC::Router(routerId, this);
 
 			this->mapRouters[routerId] = router;
 
@@ -269,8 +399,16 @@ inline void Worker::OnChannelRequest(Channel::ChannelSocket* /*channel*/, Channe
 
 		case Channel::ChannelRequest::MethodId::ROUTER_CLOSE:
 		{
-			// This may throw.
-			RTC::Router* router = GetRouterFromInternal(request->internal);
+			RTC::Router* router{ nullptr };
+
+			try
+			{
+				router = GetRouterFromInternal(request->internal);
+			}
+			catch (const MediaSoupError& error)
+			{
+				MS_THROW_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+			}
 
 			// Remove it from the map and delete it.
 			this->mapRouters.erase(router->id);
@@ -286,10 +424,20 @@ inline void Worker::OnChannelRequest(Channel::ChannelSocket* /*channel*/, Channe
 		// Any other request must be delivered to the corresponding Router.
 		default:
 		{
-			// This may throw.
-			RTC::Router* router = GetRouterFromInternal(request->internal);
+			try
+			{
+				RTC::Router* router = GetRouterFromInternal(request->internal);
 
-			router->HandleRequest(request);
+				router->HandleRequest(request);
+			}
+			catch (const MediaSoupTypeError& error)
+			{
+				MS_THROW_TYPE_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+			}
+			catch (const MediaSoupError& error)
+			{
+				MS_THROW_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+			}
 
 			break;
 		}
@@ -317,10 +465,20 @@ inline void Worker::OnPayloadChannelNotification(
 
 	MS_DEBUG_DEV("PayloadChannel notification received [event:%s]", notification->event.c_str());
 
-	// This may throw.
-	RTC::Router* router = GetRouterFromInternal(notification->internal);
+	try
+	{
+		RTC::Router* router = GetRouterFromInternal(notification->internal);
 
-	router->HandleNotification(notification);
+		router->HandleNotification(notification);
+	}
+	catch (const MediaSoupTypeError& error)
+	{
+		MS_THROW_TYPE_ERROR("%s [event:%s]", error.what(), notification->event.c_str());
+	}
+	catch (const MediaSoupError& error)
+	{
+		MS_THROW_ERROR("%s [method:%s]", error.what(), notification->event.c_str());
+	}
 }
 
 inline void Worker::OnPayloadChannelRequest(
@@ -334,10 +492,20 @@ inline void Worker::OnPayloadChannelRequest(
 	  request->method.c_str(),
 	  request->id);
 
-	// This may throw.
-	RTC::Router* router = GetRouterFromInternal(request->internal);
+	try
+	{
+		RTC::Router* router = GetRouterFromInternal(request->internal);
 
-	router->HandleRequest(request);
+		router->HandleRequest(request);
+	}
+	catch (const MediaSoupTypeError& error)
+	{
+		MS_THROW_TYPE_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+	}
+	catch (const MediaSoupError& error)
+	{
+		MS_THROW_ERROR("%s [method:%s]", error.what(), request->method.c_str());
+	}
 }
 
 inline void Worker::OnPayloadChannelClosed(PayloadChannel::PayloadChannelSocket* /*payloadChannel*/)
@@ -392,4 +560,21 @@ inline void Worker::OnSignal(SignalsHandler* /*signalsHandler*/, int signum)
 			MS_WARN_DEV("received a non handled signal [signum:%d]", signum);
 		}
 	}
+}
+
+inline RTC::WebRtcServer* Worker::OnRouterNeedWebRtcServer(
+  RTC::Router* /*router*/, std::string& webRtcServerId)
+{
+	MS_TRACE();
+
+	RTC::WebRtcServer* webRtcServer{ nullptr };
+
+	auto it = this->mapWebRtcServers.find(webRtcServerId);
+
+	if (it != this->mapWebRtcServers.end())
+	{
+		webRtcServer = it->second;
+	}
+
+	return webRtcServer;
 }

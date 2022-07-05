@@ -6,6 +6,7 @@
 //! high level use cases (for instance, a "multi-party conference room" could involve various
 //! mediasoup routers, even in different physicals hosts).
 
+pub(super) mod active_speaker_observer;
 pub(super) mod audio_level_observer;
 pub(super) mod consumer;
 pub(super) mod data_consumer;
@@ -20,46 +21,51 @@ mod tests;
 pub(super) mod transport;
 pub(super) mod webrtc_transport;
 
+use crate::active_speaker_observer::{ActiveSpeakerObserver, ActiveSpeakerObserverOptions};
 use crate::audio_level_observer::{AudioLevelObserver, AudioLevelObserverOptions};
 use crate::consumer::{Consumer, ConsumerId, ConsumerOptions};
 use crate::data_consumer::{DataConsumer, DataConsumerId, DataConsumerOptions};
 use crate::data_producer::{
     DataProducer, DataProducerId, DataProducerOptions, NonClosingDataProducer, WeakDataProducer,
 };
-use crate::data_structures::{AppData, TransportListenIp, TransportTuple};
+use crate::data_structures::{AppData, ListenIp};
 use crate::direct_transport::{DirectTransport, DirectTransportOptions};
 use crate::messages::{
-    RouterCloseRequest, RouterCreateAudioLevelObserverData, RouterCreateAudioLevelObserverRequest,
-    RouterCreateDirectTransportData, RouterCreateDirectTransportRequest,
-    RouterCreatePipeTransportData, RouterCreatePipeTransportRequest,
-    RouterCreatePlainTransportData, RouterCreatePlainTransportRequest,
-    RouterCreateWebrtcTransportData, RouterCreateWebrtcTransportRequest, RouterDumpRequest,
-    RouterInternal, RtpObserverInternal, TransportInternal,
+    RouterCloseRequest, RouterCreateActiveSpeakerObserverData,
+    RouterCreateActiveSpeakerObserverRequest, RouterCreateAudioLevelObserverData,
+    RouterCreateAudioLevelObserverRequest, RouterCreateDirectTransportData,
+    RouterCreateDirectTransportRequest, RouterCreatePipeTransportData,
+    RouterCreatePipeTransportRequest, RouterCreatePlainTransportData,
+    RouterCreatePlainTransportRequest, RouterCreateWebrtcTransportData,
+    RouterCreateWebrtcTransportRequest, RouterDumpRequest, RouterInternal, RtpObserverInternal,
+    TransportInternal,
 };
 use crate::pipe_transport::{
     PipeTransport, PipeTransportOptions, PipeTransportRemoteParameters, WeakPipeTransport,
 };
 use crate::plain_transport::{PlainTransport, PlainTransportOptions};
 use crate::producer::{PipedProducer, Producer, ProducerId, ProducerOptions, WeakProducer};
-use crate::rtp_observer::RtpObserverId;
+use crate::rtp_observer::{RtpObserver, RtpObserverId};
 use crate::rtp_parameters::{RtpCapabilities, RtpCapabilitiesFinalized, RtpCodecCapability};
 use crate::sctp_parameters::NumSctpStreams;
 use crate::transport::{
     ConsumeDataError, ConsumeError, ProduceDataError, ProduceError, Transport, TransportGeneric,
     TransportId,
 };
-use crate::webrtc_transport::{WebRtcTransport, WebRtcTransportOptions};
+use crate::webrtc_transport::{WebRtcTransport, WebRtcTransportListen, WebRtcTransportOptions};
 use crate::worker::{Channel, PayloadChannel, RequestError, Worker};
 use crate::{ortc, uuid_based_wrapper_type};
 use async_executor::Executor;
 use async_lock::Mutex as AsyncMutex;
 use event_listener_primitives::{Bag, BagOnce, HandlerId};
 use futures_lite::future;
+use hash_hasher::{HashedMap, HashedSet};
 use log::{debug, error};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::net::{IpAddr, Ipv4Addr};
+use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use thiserror::Error;
@@ -113,7 +119,7 @@ pub struct PipeToRouterOptions {
     /// IP used in the PipeTransport pair.
     ///
     /// Default `127.0.0.1`.
-    listen_ip: TransportListenIp,
+    listen_ip: ListenIp,
     /// Create a SCTP association.
     ///
     /// Default `true`.
@@ -136,8 +142,8 @@ impl PipeToRouterOptions {
     pub fn new(router: Router) -> Self {
         Self {
             router,
-            listen_ip: TransportListenIp {
-                ip: "127.0.0.1".parse().unwrap(),
+            listen_ip: ListenIp {
+                ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
                 announced_ip: None,
             },
             enable_sctp: true,
@@ -265,13 +271,14 @@ impl From<ProduceDataError> for PipeDataProducerToRouterError {
 #[non_exhaustive]
 pub struct RouterDump {
     pub id: RouterId,
-    pub map_consumer_id_producer_id: HashMap<ConsumerId, ProducerId>,
-    pub map_data_consumer_id_data_producer_id: HashMap<DataConsumerId, DataProducerId>,
-    pub map_data_producer_id_data_consumer_ids: HashMap<DataProducerId, HashSet<DataConsumerId>>,
-    pub map_producer_id_consumer_ids: HashMap<ProducerId, HashSet<ConsumerId>>,
-    pub map_producer_id_observer_ids: HashMap<ProducerId, HashSet<RtpObserverId>>,
-    pub rtp_observer_ids: HashSet<RtpObserverId>,
-    pub transport_ids: HashSet<TransportId>,
+    pub map_consumer_id_producer_id: HashedMap<ConsumerId, ProducerId>,
+    pub map_data_consumer_id_data_producer_id: HashedMap<DataConsumerId, DataProducerId>,
+    pub map_data_producer_id_data_consumer_ids:
+        HashedMap<DataProducerId, HashedSet<DataConsumerId>>,
+    pub map_producer_id_consumer_ids: HashedMap<ProducerId, HashedSet<ConsumerId>>,
+    pub map_producer_id_observer_ids: HashedMap<ProducerId, HashedSet<RtpObserverId>>,
+    pub rtp_observer_ids: HashedSet<RtpObserverId>,
+    pub transport_ids: HashedSet<TransportId>,
 }
 
 /// New transport that was just created.
@@ -287,11 +294,37 @@ pub enum NewTransport<'a> {
     WebRtc(&'a WebRtcTransport),
 }
 
+impl<'a> Deref for NewTransport<'a> {
+    type Target = dyn Transport;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Direct(transport) => *transport as &Self::Target,
+            Self::Pipe(transport) => *transport as &Self::Target,
+            Self::Plain(transport) => *transport as &Self::Target,
+            Self::WebRtc(transport) => *transport as &Self::Target,
+        }
+    }
+}
+
 /// New RTP observer that was just created.
 #[derive(Debug)]
 pub enum NewRtpObserver<'a> {
     /// Audio level observer
     AudioLevel(&'a AudioLevelObserver),
+    /// Active speaker observer
+    ActiveSpeaker(&'a ActiveSpeakerObserver),
+}
+
+impl<'a> Deref for NewRtpObserver<'a> {
+    type Target = dyn RtpObserver;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::AudioLevel(observer) => *observer as &Self::Target,
+            Self::ActiveSpeaker(observer) => *observer as &Self::Target,
+        }
+    }
 }
 
 struct PipeTransportPair {
@@ -324,8 +357,8 @@ impl WeakPipeTransportPair {
 
 #[derive(Default)]
 struct Handlers {
-    new_transport: Bag<Box<dyn Fn(NewTransport<'_>) + Send + Sync>>,
-    new_rtp_observer: Bag<Box<dyn Fn(NewRtpObserver<'_>) + Send + Sync>>,
+    new_transport: Bag<Arc<dyn Fn(NewTransport<'_>) + Send + Sync>>,
+    new_rtp_observer: Bag<Arc<dyn Fn(NewRtpObserver<'_>) + Send + Sync>>,
     worker_close: BagOnce<Box<dyn FnOnce() + Send>>,
     close: BagOnce<Box<dyn FnOnce() + Send>>,
 }
@@ -338,13 +371,13 @@ struct Inner {
     payload_channel: PayloadChannel,
     handlers: Arc<Handlers>,
     app_data: AppData,
-    producers: Arc<RwLock<HashMap<ProducerId, WeakProducer>>>,
-    data_producers: Arc<RwLock<HashMap<DataProducerId, WeakDataProducer>>>,
+    producers: Arc<RwLock<HashedMap<ProducerId, WeakProducer>>>,
+    data_producers: Arc<RwLock<HashedMap<DataProducerId, WeakDataProducer>>>,
     #[allow(clippy::type_complexity)]
     mapped_pipe_transports:
-        Arc<Mutex<HashMap<RouterId, Arc<AsyncMutex<Option<WeakPipeTransportPair>>>>>>,
+        Arc<Mutex<HashedMap<RouterId, Arc<AsyncMutex<Option<WeakPipeTransportPair>>>>>>,
     // Make sure worker is not dropped until this router is not dropped
-    worker: Option<Worker>,
+    worker: Worker,
     closed: AtomicBool,
     _on_worker_close_handler: Mutex<HandlerId>,
 }
@@ -367,14 +400,11 @@ impl Inner {
                 let request = RouterCloseRequest {
                     internal: RouterInternal { router_id: self.id },
                 };
-                let worker = self.worker.clone();
                 self.executor
                     .spawn(async move {
                         if let Err(error) = channel.request(request).await {
                             error!("router closing failed on drop: {}", error);
                         }
-
-                        drop(worker);
                     })
                     .detach();
             }
@@ -421,10 +451,10 @@ impl Router {
     ) -> Self {
         debug!("new()");
 
-        let producers = Arc::<RwLock<HashMap<ProducerId, WeakProducer>>>::default();
-        let data_producers = Arc::<RwLock<HashMap<DataProducerId, WeakDataProducer>>>::default();
+        let producers = Arc::<RwLock<HashedMap<ProducerId, WeakProducer>>>::default();
+        let data_producers = Arc::<RwLock<HashedMap<DataProducerId, WeakDataProducer>>>::default();
         let mapped_pipe_transports = Arc::<
-            Mutex<HashMap<RouterId, Arc<AsyncMutex<Option<WeakPipeTransportPair>>>>>,
+            Mutex<HashedMap<RouterId, Arc<AsyncMutex<Option<WeakPipeTransportPair>>>>>,
         >::default();
         let handlers = Arc::<Handlers>::default();
         let inner_weak = Arc::<Mutex<Option<Weak<Inner>>>>::default();
@@ -432,7 +462,8 @@ impl Router {
             let inner_weak = Arc::clone(&inner_weak);
 
             move || {
-                if let Some(inner) = inner_weak.lock().as_ref().and_then(Weak::upgrade) {
+                let maybe_inner = inner_weak.lock().as_ref().and_then(Weak::upgrade);
+                if let Some(inner) = maybe_inner {
                     inner.handlers.worker_close.call_simple();
                     if !inner.closed.swap(true, Ordering::SeqCst) {
                         inner.handlers.close.call_simple();
@@ -451,7 +482,7 @@ impl Router {
             data_producers,
             mapped_pipe_transports,
             app_data,
-            worker: Some(worker),
+            worker,
             closed: AtomicBool::new(false),
             _on_worker_close_handler: Mutex::new(on_worker_close_handler),
         });
@@ -465,6 +496,11 @@ impl Router {
     #[must_use]
     pub fn id(&self) -> RouterId {
         self.inner.id
+    }
+
+    /// Worker to which router belongs.
+    pub fn worker(&self) -> &Worker {
+        &self.inner.worker
     }
 
     /// Custom application data.
@@ -513,9 +549,9 @@ impl Router {
     ///
     /// # Example
     /// ```rust
-    /// use mediasoup::direct_transport::DirectTransportOptions;
+    /// use mediasoup::prelude::*;
     ///
-    /// # async fn f(router: mediasoup::router::Router) -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn f(router: Router) -> Result<(), Box<dyn std::error::Error>> {
     /// let transport = router.create_direct_transport(DirectTransportOptions::default()).await?;
     /// # Ok(())
     /// # }
@@ -536,6 +572,7 @@ impl Router {
                 internal: TransportInternal {
                     router_id: self.inner.id,
                     transport_id,
+                    webrtc_server_id: None,
                 },
                 data: RouterCreateDirectTransportData::from_options(&direct_transport_options),
             })
@@ -565,14 +602,14 @@ impl Router {
     ///
     /// # Example
     /// ```rust
-    /// use mediasoup::data_structures::TransportListenIp;
-    /// use mediasoup::webrtc_transport::{TransportListenIps, WebRtcTransportOptions};
+    /// use mediasoup::prelude::*;
+    /// use std::net::{IpAddr, Ipv4Addr};
     ///
-    /// # async fn f(router: mediasoup::router::Router) -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn f(router: Router) -> Result<(), Box<dyn std::error::Error>> {
     /// let transport = router
     ///     .create_webrtc_transport(WebRtcTransportOptions::new(TransportListenIps::new(
-    ///         TransportListenIp {
-    ///             ip: "127.0.0.1".parse().unwrap(),
+    ///         ListenIp {
+    ///             ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
     ///             announced_ip: Some("9.9.9.1".parse().unwrap()),
     ///         },
     ///     )))
@@ -597,6 +634,10 @@ impl Router {
                 internal: TransportInternal {
                     router_id: self.inner.id,
                     transport_id,
+                    webrtc_server_id: match &webrtc_transport_options.listen {
+                        WebRtcTransportListen::Individual { .. } => None,
+                        WebRtcTransportListen::Server { webrtc_server } => Some(webrtc_server.id()),
+                    },
                 },
                 data: RouterCreateWebrtcTransportData::from_options(&webrtc_transport_options),
             })
@@ -610,6 +651,10 @@ impl Router {
             data,
             webrtc_transport_options.app_data,
             self.clone(),
+            match webrtc_transport_options.listen {
+                WebRtcTransportListen::Individual { .. } => None,
+                WebRtcTransportListen::Server { webrtc_server } => Some(webrtc_server),
+            },
         );
 
         self.inner.handlers.new_transport.call(|callback| {
@@ -627,13 +672,13 @@ impl Router {
     ///
     /// # Example
     /// ```rust
-    /// use mediasoup::data_structures::TransportListenIp;
-    /// use mediasoup::pipe_transport::PipeTransportOptions;
+    /// use mediasoup::prelude::*;
+    /// use std::net::{IpAddr, Ipv4Addr};
     ///
-    /// # async fn f(router: mediasoup::router::Router) -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn f(router: Router) -> Result<(), Box<dyn std::error::Error>> {
     /// let transport = router
-    ///     .create_pipe_transport(PipeTransportOptions::new(TransportListenIp {
-    ///         ip: "127.0.0.1".parse().unwrap(),
+    ///     .create_pipe_transport(PipeTransportOptions::new(ListenIp {
+    ///         ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
     ///         announced_ip: Some("9.9.9.1".parse().unwrap()),
     ///     }))
     ///     .await?;
@@ -657,6 +702,7 @@ impl Router {
                 internal: TransportInternal {
                     router_id: self.inner.id,
                     transport_id,
+                    webrtc_server_id: None,
                 },
                 data: RouterCreatePipeTransportData::from_options(&pipe_transport_options),
             })
@@ -687,13 +733,13 @@ impl Router {
     ///
     /// # Example
     /// ```rust
-    /// use mediasoup::data_structures::TransportListenIp;
-    /// use mediasoup::plain_transport::PlainTransportOptions;
+    /// use mediasoup::prelude::*;
+    /// use std::net::{IpAddr, Ipv4Addr};
     ///
-    /// # async fn f(router: mediasoup::router::Router) -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn f(router: Router) -> Result<(), Box<dyn std::error::Error>> {
     /// let transport = router
-    ///     .create_plain_transport(PlainTransportOptions::new(TransportListenIp {
-    ///         ip: "127.0.0.1".parse().unwrap(),
+    ///     .create_plain_transport(PlainTransportOptions::new(ListenIp {
+    ///         ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
     ///         announced_ip: Some("9.9.9.1".parse().unwrap()),
     ///     }))
     ///     .await?;
@@ -717,6 +763,7 @@ impl Router {
                 internal: TransportInternal {
                     router_id: self.inner.id,
                     transport_id,
+                    webrtc_server_id: None,
                 },
                 data: RouterCreatePlainTransportData::from_options(&plain_transport_options),
             })
@@ -747,10 +794,10 @@ impl Router {
     ///
     /// # Example
     /// ```rust
-    /// use mediasoup::audio_level_observer::AudioLevelObserverOptions;
+    /// use mediasoup::prelude::*;
     /// use std::num::NonZeroU16;
     ///
-    /// # async fn f(router: mediasoup::router::Router) -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn f(router: Router) -> Result<(), Box<dyn std::error::Error>> {
     /// let observer = router
     ///     .create_audio_level_observer({
     ///         let mut options = AudioLevelObserverOptions::default();
@@ -804,26 +851,76 @@ impl Router {
         Ok(audio_level_observer)
     }
 
+    /// Create an [`ActiveSpeakerObserver`].
+    ///
+    /// Router will be kept alive as long as at least one observer instance is alive.
+    ///
+    /// # Example
+    /// ```rust
+    /// use mediasoup::active_speaker_observer::ActiveSpeakerObserverOptions;
+    ///
+    /// # async fn f(router: mediasoup::router::Router) -> Result<(), Box<dyn std::error::Error>> {
+    /// let observer = router
+    ///     .create_active_speaker_observer({
+    ///         let mut options = ActiveSpeakerObserverOptions::default();
+    ///         options.interval = 300;
+    ///         options
+    ///     })
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn create_active_speaker_observer(
+        &self,
+        active_speaker_observer_options: ActiveSpeakerObserverOptions,
+    ) -> Result<ActiveSpeakerObserver, RequestError> {
+        debug!("create_active_speaker_observer()");
+
+        let rtp_observer_id = RtpObserverId::new();
+
+        let _buffer_guard = self
+            .inner
+            .channel
+            .buffer_messages_for(rtp_observer_id.into());
+
+        self.inner
+            .channel
+            .request(RouterCreateActiveSpeakerObserverRequest {
+                internal: RtpObserverInternal {
+                    router_id: self.inner.id,
+                    rtp_observer_id,
+                },
+                data: RouterCreateActiveSpeakerObserverData::from_options(
+                    &active_speaker_observer_options,
+                ),
+            })
+            .await?;
+
+        let active_speaker_observer = ActiveSpeakerObserver::new(
+            rtp_observer_id,
+            Arc::clone(&self.inner.executor),
+            self.inner.channel.clone(),
+            active_speaker_observer_options.app_data,
+            self.clone(),
+        );
+
+        self.inner.handlers.new_rtp_observer.call(|callback| {
+            callback(NewRtpObserver::ActiveSpeaker(&active_speaker_observer));
+        });
+
+        Ok(active_speaker_observer)
+    }
+
     /// Pipes [`Producer`] with the given `producer_id` into another [`Router`] on same host.
     ///
     /// # Example
     /// ```rust
-    /// use mediasoup::consumer::ConsumerOptions;
-    /// use mediasoup::data_structures::TransportListenIp;
-    /// use mediasoup::producer::ProducerOptions;
-    /// use mediasoup::router::{PipeToRouterOptions, RouterOptions};
-    /// use mediasoup::rtp_parameters::{
-    ///    MediaKind, MimeTypeAudio, RtcpParameters, RtpCapabilities, RtpCodecCapability,
-    ///    RtpCodecParameters, RtpCodecParametersParameters, RtpParameters,
-    /// };
-    /// use mediasoup::transport::Transport;
-    /// use mediasoup::webrtc_transport::{TransportListenIps, WebRtcTransportOptions};
-    /// use mediasoup::worker::WorkerSettings;
+    /// use mediasoup::prelude::*;
+    /// use mediasoup::rtp_parameters::RtpCodecParameters;
+    /// use std::net::{IpAddr, Ipv4Addr};
     /// use std::num::{NonZeroU32, NonZeroU8};
     ///
-    /// # async fn f(
-    /// #     worker_manager: mediasoup::worker_manager::WorkerManager,
-    /// # ) -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn f(worker_manager: WorkerManager) -> Result<(), Box<dyn std::error::Error>> {
     /// // Have two workers.
     /// let worker1 = worker_manager.create_worker(WorkerSettings::default()).await?;
     /// let worker2 = worker_manager.create_worker(WorkerSettings::default()).await?;
@@ -847,8 +944,8 @@ impl Router {
     /// // Produce in router1.
     /// let transport1 = router1
     ///     .create_webrtc_transport(WebRtcTransportOptions::new(TransportListenIps::new(
-    ///         TransportListenIp {
-    ///             ip: "127.0.0.1".parse().unwrap(),
+    ///         ListenIp {
+    ///             ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
     ///             announced_ip: Some("9.9.9.1".parse().unwrap()),
     ///         },
     ///     )))
@@ -869,9 +966,7 @@ impl Router {
     ///                 ]),
     ///                 rtcp_feedback: vec![],
     ///             }],
-    ///             header_extensions: vec![],
-    ///             encodings: vec![],
-    ///             rtcp: RtcpParameters::default(),
+    ///             ..RtpParameters::default()
     ///         },
     ///     ))
     ///     .await?;
@@ -887,8 +982,8 @@ impl Router {
     /// // Consume producer1 from router2.
     /// let transport2 = router2
     ///     .create_webrtc_transport(WebRtcTransportOptions::new(TransportListenIps::new(
-    ///         TransportListenIp {
-    ///             ip: "127.0.0.1".parse().unwrap(),
+    ///         ListenIp {
+    ///             ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
     ///             announced_ip: Some("9.9.9.1".parse().unwrap()),
     ///         },
     ///     )))
@@ -939,7 +1034,9 @@ impl Router {
             }
         };
 
-        let pipe_transport_pair = self.get_pipe_transport_pair(pipe_to_router_options).await?;
+        let pipe_transport_pair = self
+            .get_or_create_pipe_transport_pair(pipe_to_router_options)
+            .await?;
 
         let pipe_consumer = pipe_transport_pair
             .local
@@ -1050,18 +1147,10 @@ impl Router {
     ///
     /// # Example
     /// ```rust
-    /// use mediasoup::data_consumer::DataConsumerOptions;
-    /// use mediasoup::data_structures::TransportListenIp;
-    /// use mediasoup::data_producer::DataProducerOptions;
-    /// use mediasoup::router::{PipeToRouterOptions, RouterOptions};
-    /// use mediasoup::sctp_parameters::SctpStreamParameters;
-    /// use mediasoup::transport::Transport;
-    /// use mediasoup::webrtc_transport::{TransportListenIps, WebRtcTransportOptions};
-    /// use mediasoup::worker::WorkerSettings;
+    /// use mediasoup::prelude::*;
+    /// use std::net::{IpAddr, Ipv4Addr};
     ///
-    /// # async fn f(
-    /// #     worker_manager: mediasoup::worker_manager::WorkerManager,
-    /// # ) -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn f(worker_manager: WorkerManager) -> Result<(), Box<dyn std::error::Error>> {
     /// // Have two workers.
     /// let worker1 = worker_manager.create_worker(WorkerSettings::default()).await?;
     /// let worker2 = worker_manager.create_worker(WorkerSettings::default()).await?;
@@ -1074,8 +1163,8 @@ impl Router {
     /// let transport1 = router1
     ///     .create_webrtc_transport({
     ///         let mut options = WebRtcTransportOptions::new(TransportListenIps::new(
-    ///             TransportListenIp {
-    ///                 ip: "127.0.0.1".parse().unwrap(),
+    ///             ListenIp {
+    ///                 ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
     ///                 announced_ip: Some("9.9.9.1".parse().unwrap()),
     ///             },
     ///         ));
@@ -1101,8 +1190,8 @@ impl Router {
     /// let transport2 = router2
     ///     .create_webrtc_transport({
     ///         let mut options = WebRtcTransportOptions::new(TransportListenIps::new(
-    ///             TransportListenIp {
-    ///                 ip: "127.0.0.1".parse().unwrap(),
+    ///             ListenIp {
+    ///                 ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
     ///                 announced_ip: Some("9.9.9.1".parse().unwrap()),
     ///             },
     ///         ));
@@ -1143,7 +1232,9 @@ impl Router {
             }
         };
 
-        let pipe_transport_pair = self.get_pipe_transport_pair(pipe_to_router_options).await?;
+        let pipe_transport_pair = self
+            .get_or_create_pipe_transport_pair(pipe_to_router_options)
+            .await?;
 
         let pipe_data_consumer = pipe_transport_pair
             .local
@@ -1243,7 +1334,7 @@ impl Router {
         &self,
         callback: F,
     ) -> HandlerId {
-        self.inner.handlers.new_transport.add(Box::new(callback))
+        self.inner.handlers.new_transport.add(Arc::new(callback))
     }
 
     /// Callback is called when a new RTP observer is created.
@@ -1251,7 +1342,7 @@ impl Router {
         &self,
         callback: F,
     ) -> HandlerId {
-        self.inner.handlers.new_rtp_observer.add(Box::new(callback))
+        self.inner.handlers.new_rtp_observer.add(Arc::new(callback))
     }
 
     /// Callback is called when the worker this router belongs to is closed for whatever reason.
@@ -1272,7 +1363,7 @@ impl Router {
         handler_id
     }
 
-    async fn get_pipe_transport_pair(
+    async fn get_or_create_pipe_transport_pair(
         &self,
         pipe_to_router_options: PipeToRouterOptions,
     ) -> Result<PipeTransportPair, RequestError> {
@@ -1280,19 +1371,18 @@ impl Router {
         // destination Routers. We just want to keep a PipeTransport pair for each
         // pair of Routers. Since this operation is async, it may happen that two
         // simultaneous calls piping to the same router would end up generating two pairs of
-        // `PipeTransport`. To prevent that, we have `HashMap` with mapping behind `Mutex` and
+        // `PipeTransport`. To prevent that, we have `HashedMap` with mapping behind `Mutex` and
         // another `Mutex` on the pair of `PipeTransport`.
 
-        let mut mapped_pipe_transports = self.inner.mapped_pipe_transports.lock();
-
-        let pipe_transport_pair_mutex = mapped_pipe_transports
+        let pipe_transport_pair_mutex = self
+            .inner
+            .mapped_pipe_transports
+            .lock()
             .entry(pipe_to_router_options.router.id())
             .or_default()
             .clone();
 
         let mut pipe_transport_pair_guard = pipe_transport_pair_mutex.lock().await;
-
-        drop(mapped_pipe_transports);
 
         let pipe_transport_pair = match pipe_transport_pair_guard
             .as_ref()
@@ -1343,43 +1433,21 @@ impl Router {
             future::try_zip(local_pipe_transport_fut, remote_pipe_transport_fut).await?;
 
         let local_connect_fut = local_pipe_transport.connect({
-            let (ip, port) = match remote_pipe_transport.tuple() {
-                TransportTuple::LocalOnly {
-                    local_ip,
-                    local_port,
-                    ..
-                }
-                | TransportTuple::WithRemote {
-                    local_ip,
-                    local_port,
-                    ..
-                } => (local_ip, local_port),
-            };
+            let tuple = remote_pipe_transport.tuple();
 
             PipeTransportRemoteParameters {
-                ip,
-                port,
+                ip: tuple.local_ip(),
+                port: tuple.local_port(),
                 srtp_parameters: remote_pipe_transport.srtp_parameters(),
             }
         });
 
         let remote_connect_fut = remote_pipe_transport.connect({
-            let (ip, port) = match local_pipe_transport.tuple() {
-                TransportTuple::LocalOnly {
-                    local_ip,
-                    local_port,
-                    ..
-                }
-                | TransportTuple::WithRemote {
-                    local_ip,
-                    local_port,
-                    ..
-                } => (local_ip, local_port),
-            };
+            let tuple = local_pipe_transport.tuple();
 
             PipeTransportRemoteParameters {
-                ip,
-                port,
+                ip: tuple.local_ip(),
+                port: tuple.local_port(),
                 srtp_parameters: local_pipe_transport.srtp_parameters(),
             }
         });
@@ -1416,7 +1484,7 @@ impl Router {
         {
             let producers_weak = Arc::downgrade(&self.inner.producers);
             transport
-                .on_new_producer(Box::new(move |producer| {
+                .on_new_producer(Arc::new(move |producer| {
                     let producer_id = producer.id();
                     if let Some(producers) = producers_weak.upgrade() {
                         producers.write().insert(producer_id, producer.downgrade());
@@ -1437,7 +1505,7 @@ impl Router {
         {
             let data_producers_weak = Arc::downgrade(&self.inner.data_producers);
             transport
-                .on_new_data_producer(Box::new(move |data_producer| {
+                .on_new_data_producer(Arc::new(move |data_producer| {
                     let data_producer_id = data_producer.id();
                     if let Some(data_producers) = data_producers_weak.upgrade() {
                         data_producers

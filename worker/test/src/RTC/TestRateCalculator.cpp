@@ -1,7 +1,7 @@
 #include "common.hpp"
 #include "DepLibUV.hpp"
 #include "RTC/RateCalculator.hpp"
-#include <catch.hpp>
+#include <catch2/catch.hpp>
 #include <vector>
 
 using namespace RTC;
@@ -59,6 +59,22 @@ SCENARIO("Bitrate calculator", "[rtp][bitrate]")
 		validate(rate, nowMs, input);
 	}
 
+	SECTION("receive item every 1000 ms")
+	{
+		RateCalculator rate(1000, 8000, 100);
+
+		// clang-format off
+		std::vector<data> input =
+		{
+			{ 0,    5, 40 },
+			{ 1000, 5, 40 },
+			{ 2000, 5, 40 }
+		};
+		// clang-format on
+
+		validate(rate, nowMs, input);
+	}
+
 	SECTION("slide")
 	{
 		RateCalculator rate(1000, 8000, 1000);
@@ -90,8 +106,8 @@ SCENARIO("Bitrate calculator", "[rtp][bitrate]")
 			{ 999,  2, 56 },
 			{ 1001, 1, 24 }, // merged inside 999
 			{ 1001, 1, 32 }, // merged inside 999
-			{ 2000, 1, 8 } 	 // it will erase the item with timestamp=999, 
-							 // removing also the next two samples. 
+			{ 2000, 1, 8 } 	 // it will erase the item with timestamp=999,
+							 // removing also the next two samples.
 							 // The end estimation will include only the last sample.
 		};
 		// clang-format on

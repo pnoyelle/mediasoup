@@ -53,12 +53,14 @@ mod macros;
 mod messages;
 #[doc(hidden)]
 pub mod ortc;
+pub mod prelude;
 pub mod router;
 pub mod rtp_parameters;
 pub mod scalability_modes;
 pub mod sctp_parameters;
 pub mod srtp_parameters;
 pub mod supported_rtp_capabilities;
+pub mod webrtc_server;
 pub mod worker;
 pub mod worker_manager;
 
@@ -66,6 +68,12 @@ pub mod audio_level_observer {
     //! An audio level observer monitors the volume of the selected audio producers.
 
     pub use crate::router::audio_level_observer::*;
+}
+
+pub mod active_speaker_observer {
+    //! An active speaker observer monitors the speaking activity of the selected audio producers.
+
+    pub use crate::router::active_speaker_observer::*;
 }
 
 pub mod consumer {
