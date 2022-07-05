@@ -13,6 +13,7 @@ static constexpr int PayloadProducerChannelFd{ 6 };
 
 int main(int argc, char* argv[])
 {
+	MS_ERROR_STD("TEST BUILD 3");
 	// Ensure we are called by our Node library.
 	if (!std::getenv("MEDIASOUP_VERSION"))
 	{

@@ -20,9 +20,14 @@
 
 #include <inttypes.h>
 #include <stdint.h>
-#include <stdio.h>
+// #include <stdio.h>
 
 #include "../obuparse.h"
+
+int printf ( const char * format, ... )
+{
+    return 0;
+}
 
 void print_json_film_grain_params(OBPFilmGrainParameters *my_struct)
 {

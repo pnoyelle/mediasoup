@@ -199,8 +199,6 @@ namespace RTC
 					return ret;
 				}
 
-				/* MS_DEBUG_DEV("{\"obu_type\": %d, \"offset\": %td, \"obu_size\": %zu, \"temporal_id\": %d, \"spatial_id\": %d}\n",
-					obu_type, offset, obu_size, temporal_id, spatial_id); */
 
 				switch (obu_type) {
 					case OBP_OBU_TEMPORAL_DELIMITER: {
@@ -213,6 +211,8 @@ namespace RTC
 						memset(&obuParserState->hdr, 0, sizeof(OBPSequenceHeader));
 						ret = obp_parse_sequence_header(packet_buf + packet_pos + offset, obu_size, &obuParserState->hdr, &err);
 						if (ret < 0) {
+							/*MS_DEBUG_DEV("{\"obu_type\": %d, \"offset\": %td, \"obu_size\": %zu, \"temporal_id\": %d, \"spatial_id\": %d}\n",
+					obu_type, offset, obu_size, temporal_id, spatial_id);*/
 							MS_DEBUG_DEV("Failed to parse sequence header: %s\n", err.error);
 							return ret;
 						}
@@ -335,9 +335,14 @@ namespace RTC
 			MS_TRACE();
 
 			auto* context = static_cast<RTC::Codecs::AV1X::EncodingContext*>(encodingContext);
-
-			MS_ASSERT(context->GetTargetSpatialLayer() >= 0, "target spatial layer cannot be -1");
-			MS_ASSERT(context->GetTargetTemporalLayer() >= 0, "target temporal layer cannot be -1");
+			if (context->GetTargetSpatialLayer() >= 0) {
+				MS_WARN_TAG(rtp,  "target spatial layer cannot be -1");
+			} 
+			if (context->GetTargetTemporalLayer() >= 0) {
+				MS_WARN_TAG(rtp,  "target temporal layer cannot be -1");
+			}
+			// MS_ASSERT(context->GetTargetSpatialLayer() >= 0, "target spatial layer cannot be -1");
+			// MS_ASSERT(context->GetTargetTemporalLayer() >= 0, "target temporal layer cannot be -1");
 
 			auto packetSpatialLayer  = GetSpatialLayer();
 			auto packetTemporalLayer = GetTemporalLayer();
@@ -356,7 +361,7 @@ namespace RTC
 				MS_WARN_TAG(
 				  rtp, "too high packet layers %" PRIu8 ":%" PRIu8, packetSpatialLayer, packetTemporalLayer);
 
-				return false;
+				// return false;
 			}
 
 			// Check whether pictureId sync is required.
